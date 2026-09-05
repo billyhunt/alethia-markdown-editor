@@ -2,6 +2,7 @@ import { EditorView } from '@codemirror/view'
 import { EditorSelection } from '@codemirror/state'
 import { createEditorState } from './createEditor.ts'
 import { EDITOR_COMMANDS } from './commands.ts'
+import { focusMode, modesCompartment, typewriterMode } from './extensions/modes.ts'
 import type { EditorCommand } from '../../shared/ipc.ts'
 
 /**
@@ -75,6 +76,18 @@ class EditorController {
     if (!view) return false
     view.focus()
     return EDITOR_COMMANDS[command]({ state: view.state, dispatch: view.dispatch })
+  }
+
+  /** Swaps focus/typewriter modes without rebuilding the document state. */
+  setModes(modes: { focus: boolean; typewriter: boolean }): void {
+    const view = this.view
+    if (!view) return
+    view.dispatch({
+      effects: modesCompartment.reconfigure([
+        modes.focus ? focusMode() : [],
+        modes.typewriter ? typewriterMode() : [],
+      ]),
+    })
   }
 
   hasFocus(): boolean {

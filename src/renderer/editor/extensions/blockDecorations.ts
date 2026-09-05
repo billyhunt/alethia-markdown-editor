@@ -4,6 +4,7 @@ import { syntaxTree } from '@codemirror/language'
 import { isActive } from './activeRanges.ts'
 import { parseTable } from './tableModel.ts'
 import { TableWidget } from '../widgets/TableWidget.ts'
+import { MathWidget } from '../widgets/MathWidget.ts'
 
 /**
  * Decorations that span more than one line.
@@ -30,6 +31,25 @@ function build(state: Parameters<typeof syntaxTree>[0]): DecorationSet {
         case 'ATXHeading5':
         case 'ATXHeading6':
           return false
+
+        case 'BlockMath': {
+          const first = state.doc.lineAt(ref.from)
+          const last = state.doc.lineAt(ref.to)
+          if (!isActive(state, first.from, last.to)) {
+            // Strip the `$$` fence lines; only the body is TeX.
+            const source = state.doc.sliceString(
+              state.doc.line(Math.min(first.number + 1, last.number)).from,
+              state.doc.line(Math.max(last.number - 1, first.number)).to,
+            )
+            ranges.push(
+              Decoration.replace({ widget: new MathWidget(source, true), block: true }).range(
+                first.from,
+                last.to,
+              ),
+            )
+          }
+          return false
+        }
 
         case 'Table': {
           const model = parseTable(state, ref.node)

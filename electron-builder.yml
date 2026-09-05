@@ -1,0 +1,24 @@
+appId: com.billyhunt.markdown-reader
+productName: Markdown Reader
+directories:
+  buildResources: build
+  output: release
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+asar: true
+mac:
+  category: public.app-category.productivity
+  target: [dir]
+  # Unsigned local builds. Remove this (and add hardenedRuntime, entitlements
+  # and notarize) when a Developer ID certificate is available.
+  identity: null
+  darkModeSupport: true
+fileAssociations:
+  - ext: [md, markdown, mdown, mkd]
+    name: Markdown Document
+    role: Editor
+    mimeType: text/markdown
+    # Appears under "Open With" without stealing the default handler.
+    rank: Alternate

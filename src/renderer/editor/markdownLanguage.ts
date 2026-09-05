@@ -1,5 +1,7 @@
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
+import { mathExtension } from './extensions/lezer/math.ts'
+import { frontMatterExtension } from './extensions/lezer/frontMatter.ts'
 
 /**
  * `markdownLanguage` rather than the default CommonMark base, so GFM is on:
@@ -11,4 +13,5 @@ import { languages } from '@codemirror/language-data'
 export const markdownExtension = markdown({
   base: markdownLanguage,
   codeLanguages: languages,
+  extensions: [mathExtension, frontMatterExtension],
 })

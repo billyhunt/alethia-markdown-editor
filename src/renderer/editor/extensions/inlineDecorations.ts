@@ -10,6 +10,7 @@ import { type Range } from '@codemirror/state'
 import type { SyntaxNode } from '@lezer/common'
 import { isActive, lineIsActive } from './activeRanges.ts'
 import { BulletWidget, CheckboxWidget, CodeFenceWidget, HrWidget } from '../widgets/index.ts'
+import { MathWidget } from '../widgets/MathWidget.ts'
 
 /**
  * The live-preview engine for everything that fits on one line.
@@ -219,6 +220,32 @@ export function buildDecorations(view: EditorView): Built {
           case 'InlineCode':
             wrapped(node, 'cm-md-code', 'CodeMark')
             return true
+
+          case 'InlineMath': {
+            if (!active(node.from, node.to)) {
+              // The delimiters are not part of the TeX source.
+              const source = state.doc.sliceString(node.from + 1, node.to - 1)
+              replaceWith(
+                built,
+                node.from,
+                node.to,
+                Decoration.replace({ widget: new MathWidget(source, false) }),
+              )
+            }
+            return false
+          }
+
+          case 'FrontMatter': {
+            // Always raw: it is metadata, not prose.
+            for (
+              let n = state.doc.lineAt(node.from).number;
+              n <= state.doc.lineAt(node.to).number;
+              n += 1
+            ) {
+              built.decorations.push(lineDeco('cm-md-frontmatter').range(state.doc.line(n).from))
+            }
+            return false
+          }
 
           case 'Escape':
             if (!active(node.from, node.to)) hide(built, node.from, node.from + 1)

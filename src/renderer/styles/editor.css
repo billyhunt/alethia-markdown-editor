@@ -132,3 +132,22 @@
   font-size: 0.85em;
   color: var(--text-muted);
 }
+
+/* Focus mode: everything outside the caret's paragraph recedes. */
+.cm-line.cm-focus-dim {
+  opacity: 0.28;
+  transition: opacity 0.2s ease;
+}
+
+.cm-md-math-block {
+  display: block;
+  text-align: center;
+  padding: 0.3em 0;
+}
+
+.cm-line.cm-md-frontmatter {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  color: var(--text-muted);
+  background: var(--code-bg);
+}

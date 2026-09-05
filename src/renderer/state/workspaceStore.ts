@@ -17,6 +17,8 @@ export interface WorkspaceState {
   outline: OutlineEntry[]
   words: number
   chars: number
+  focusMode: boolean
+  typewriterMode: boolean
   /** Non-modal notice shown above the editor (external change, conflict). */
   notice: { message: string; actions: Array<{ label: string; run: () => void }> } | null
 
@@ -27,6 +29,8 @@ export interface WorkspaceState {
   setOutline: (outline: OutlineEntry[]) => void
   setStats: (stats: { words: number; chars: number }) => void
   setNotice: (notice: WorkspaceState['notice']) => void
+  toggleFocusMode: () => void
+  toggleTypewriterMode: () => void
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({
@@ -39,6 +43,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   outline: [],
   words: 0,
   chars: 0,
+  focusMode: false,
+  typewriterMode: false,
   notice: null,
 
   setFolder: (folder) =>
@@ -53,4 +59,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   setOutline: (outline) => set({ outline }),
   setStats: ({ words, chars }) => set({ words, chars }),
   setNotice: (notice) => set({ notice }),
+  toggleFocusMode: () => set((state) => ({ focusMode: !state.focusMode })),
+  toggleTypewriterMode: () => set((state) => ({ typewriterMode: !state.typewriterMode })),
 }))

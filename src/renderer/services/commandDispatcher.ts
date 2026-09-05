@@ -56,6 +56,14 @@ export function dispatchHostCommand(command: HostCommand): void {
     case 'file:revealInFinder':
       void revealInFinder()
       return
+    case 'view:toggleFocusMode': {
+      useWorkspaceStore.getState().toggleFocusMode()
+      return
+    }
+    case 'view:toggleTypewriterMode': {
+      useWorkspaceStore.getState().toggleTypewriterMode()
+      return
+    }
     case 'view:toggleSidebar': {
       const store = useWorkspaceStore.getState()
       const next = !store.sidebarVisible

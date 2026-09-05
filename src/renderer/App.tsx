@@ -17,7 +17,11 @@ export default function App() {
   useDocumentTitle()
   useDropFiles()
 
-  const { sidebarVisible, sidebarWidth } = useWorkspaceStore()
+  const { sidebarVisible, sidebarWidth, focusMode, typewriterMode } = useWorkspaceStore()
+
+  useEffect(() => {
+    editorController.setModes({ focus: focusMode, typewriter: typewriterMode })
+  }, [focusMode, typewriterMode])
 
   useEffect(() => {
     let timer: number | undefined
