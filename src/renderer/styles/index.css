@@ -9,6 +9,18 @@
   --text-muted: #6b6b6b;
   --border: #e3e3e3;
   --accent: #3d7eff;
+  --selection: #cfe3ff;
+  --code-bg: #f2f0eb;
+
+  --code-keyword: #a626a4;
+  --code-string: #50a14f;
+  --code-comment: #a0a1a7;
+  --code-number: #c18401;
+  --code-function: #4078f2;
+  --code-type: #c18401;
+  --code-operator: #6b6b6b;
+  --code-property: #e45649;
+  --code-meta: #986801;
   --titlebar-h: 38px;
 
   --font-prose: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -24,6 +36,18 @@
     --text-muted: #8a8a8a;
     --border: #333333;
     --accent: #6aa0ff;
+    --selection: #2f4a70;
+    --code-bg: #262626;
+
+    --code-keyword: #c678dd;
+    --code-string: #98c379;
+    --code-comment: #6a6a6a;
+    --code-number: #d19a66;
+    --code-function: #61afef;
+    --code-type: #e5c07b;
+    --code-operator: #8a8a8a;
+    --code-property: #e06c75;
+    --code-meta: #d19a66;
   }
 }
 

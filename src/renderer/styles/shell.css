@@ -1,0 +1,28 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/*
+ * The only element carrying a drag region. It is a fixed strip rather than a
+ * container so no scrollable content is ever inside it -- a drag region
+ * swallows mousedown, which would make anything beneath it unclickable.
+ */
+.titlebar {
+  flex: 0 0 var(--titlebar-h);
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+}
+
+.titlebar button,
+.titlebar input,
+.titlebar a {
+  -webkit-app-region: no-drag;
+}
+
+.editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
