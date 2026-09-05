@@ -5,6 +5,7 @@ import { handleFileChange } from '../services/externalChanges.ts'
 import { adoptFolder, ensureClosable, openPath } from '../services/fileOps.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import { useDocumentStore } from '../state/documentStore.ts'
+import { editorController } from '../editor/editorController.ts'
 
 /**
  * Subscribes to every main -> renderer event exactly once, then tells main the
@@ -49,16 +50,38 @@ export function useHostEvents(): void {
       }
 
       if (ready.settings.lastFolder) await adoptFolder(ready.settings.lastFolder)
+
       if (ready.settings.lastFile) {
         const stat = await api.fs.stat(ready.settings.lastFile).catch(() => null)
-        if (stat) await openPath(ready.settings.lastFile)
+        if (stat) {
+          await openPath(ready.settings.lastFile)
+          return
+        }
       }
+
+      // Nothing to restore: show the bundled tour as an unsaved document, so a
+      // first launch lands on something rather than an empty window.
+      await showWelcomeDocument()
     })
 
     return () => {
       for (const unsubscribe of unsubscribes) unsubscribe()
     }
   }, [])
+}
+
+async function showWelcomeDocument(): Promise<void> {
+  try {
+    const response = await fetch('./sample.md')
+    if (!response.ok) return
+    const text = await response.text()
+    editorController.setDocument(text)
+    // Left untitled deliberately: Save prompts for a location rather than
+    // writing back into the app bundle.
+    useDocumentStore.getState().load({ filePath: null, text, mtimeMs: null })
+  } catch {
+    /* an empty editor is an acceptable fallback */
+  }
 }
 
 /** Mirrors document identity and dirty state into the native title bar. */

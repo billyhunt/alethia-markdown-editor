@@ -1,7 +1,9 @@
-# Markdown Reader
+# Welcome to Markdown Reader
 
-A Typora-style editor: the markdown source is always there, and rendering is a
-skin the caret peels back.
+The markdown source is always here. Rendering is a skin the caret peels back --
+click into anything below and its raw syntax reappears around just that node.
+
+Open a file with **Cmd+O**, or a whole folder with **Cmd+Shift+O**.
 
 ## Inline formatting
 
