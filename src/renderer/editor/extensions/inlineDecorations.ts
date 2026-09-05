@@ -82,51 +82,58 @@ export function buildDecorations(view: EditorView): Built {
   const claimedLines = new Set<number>()
 
   for (const { from, to } of view.visibleRanges) {
-    // --- pass 1: list structure -------------------------------------------
+    // --- pass 1: list structure ------------------------------------------
+    // Items are collected first and applied innermost-first: a parent item's
+    // range covers its nested children, so claiming lines in tree order would
+    // let the outer item claim a nested item's own line at the wrong depth.
+    const items: Array<{ node: SyntaxNode; depth: number }> = []
     tree.iterate({
       from,
       to,
       enter: (ref) => {
         if (ref.name !== 'ListItem') return true
-        const node = ref.node
         let depth = 0
-        for (let p = node.parent; p; p = p.parent) if (p.name === 'ListItem') depth += 1
-
-        const mark = firstNamed(node, 'ListMark')
-        if (!mark) return true
-        const markerLine = state.doc.lineAt(mark.from)
-        const contentCol = mark.to + 1 - markerLine.from
-
-        if (!claimedLines.has(markerLine.number)) {
-          claimedLines.add(markerLine.number)
-          built.decorations.push(
-            Decoration.line({
-              class: 'cm-md-li',
-              attributes: { style: `--md-depth:${depth}` },
-            }).range(markerLine.from),
-          )
-          // Leading indentation is always hidden -- it is layout, not content.
-          hide(built, markerLine.from, mark.from)
-        }
-
-        // Continuation lines of the same item align with its text.
-        const lastLine = state.doc.lineAt(node.to).number
-        for (let n = markerLine.number + 1; n <= lastLine; n += 1) {
-          if (claimedLines.has(n)) continue
-          claimedLines.add(n)
-          const line = state.doc.line(n)
-          const leading = line.text.length - line.text.trimStart().length
-          built.decorations.push(
-            Decoration.line({
-              class: 'cm-md-li',
-              attributes: { style: `--md-depth:${depth}` },
-            }).range(line.from),
-          )
-          hide(built, line.from, line.from + Math.min(contentCol, leading))
-        }
+        for (let p = ref.node.parent; p; p = p.parent) if (p.name === 'ListItem') depth += 1
+        items.push({ node: ref.node, depth })
         return true
       },
     })
+    items.sort((a, b) => b.depth - a.depth)
+
+    for (const { node, depth } of items) {
+      const mark = firstNamed(node, 'ListMark')
+      if (!mark) continue
+      const markerLine = state.doc.lineAt(mark.from)
+      const contentCol = mark.to + 1 - markerLine.from
+
+      if (!claimedLines.has(markerLine.number)) {
+        claimedLines.add(markerLine.number)
+        built.decorations.push(
+          Decoration.line({
+            class: 'cm-md-li',
+            attributes: { style: `--md-depth:${depth}` },
+          }).range(markerLine.from),
+        )
+        // Leading indentation is layout, not content, so it is always hidden.
+        hide(built, markerLine.from, mark.from)
+      }
+
+      // Continuation lines of this item align with its text.
+      const lastLine = state.doc.lineAt(node.to).number
+      for (let n = markerLine.number + 1; n <= lastLine; n += 1) {
+        if (claimedLines.has(n)) continue
+        claimedLines.add(n)
+        const line = state.doc.line(n)
+        const leading = line.text.length - line.text.trimStart().length
+        built.decorations.push(
+          Decoration.line({
+            class: 'cm-md-li',
+            attributes: { style: `--md-depth:${depth}` },
+          }).range(line.from),
+        )
+        hide(built, line.from, line.from + Math.min(contentCol, leading))
+      }
+    }
 
     // --- pass 2: everything else ------------------------------------------
     tree.iterate({
@@ -138,6 +145,8 @@ export function buildDecorations(view: EditorView): Built {
 
         switch (name) {
           case 'HTMLBlock':
+          // Handled by blockDecorations, which can span lines.
+          case 'Table':
             return false
 
           case 'FencedCode': {
@@ -273,7 +282,9 @@ export function buildDecorations(view: EditorView): Built {
             const text = state.doc.sliceString(node.from, node.to)
             if (/^[-*+]$/.test(text)) {
               let depth = 0
-              for (let p = node.parent?.parent; p; p = p.parent) if (p.name === 'ListItem') depth += 1
+              for (let p = node.parent; p; p = p.parent) if (p.name === 'ListItem') depth += 1
+              // The mark's own ListItem parent is not a nesting level.
+              depth = Math.max(0, depth - 1)
               // Replaced even on the active line: typing "- " should become a
               // bullet immediately, as it does in Typora.
               replaceWith(

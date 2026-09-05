@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { getSettings, patchSettings } from './settings.ts'
-import { grantFile, validatePath } from './paths.ts'
+import { grantFile, grantRoot, validatePath } from './paths.ts'
 
 const MAX_RECENTS = 20
 
@@ -29,13 +29,31 @@ export function clearRecents(): void {
   app.clearRecentDocuments()
 }
 
-/** Re-grants persisted recents at startup so they can be reopened. */
+/**
+ * Re-grants everything the previous session had open, so session restore can
+ * read it back without prompting the user for a dialog again.
+ */
 export function grantPersistedRecents(): void {
-  for (const filePath of getSettings().recentFiles) {
+  const settings = getSettings()
+  for (const filePath of settings.recentFiles) {
     try {
       grantFile(filePath)
     } catch {
       /* skip malformed entries */
+    }
+  }
+  if (settings.lastFolder) {
+    try {
+      grantRoot(settings.lastFolder)
+    } catch {
+      /* ignore */
+    }
+  }
+  if (settings.lastFile) {
+    try {
+      grantFile(settings.lastFile)
+    } catch {
+      /* ignore */
     }
   }
 }

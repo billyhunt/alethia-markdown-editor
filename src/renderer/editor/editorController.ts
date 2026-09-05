@@ -17,10 +17,7 @@ class EditorController {
     this.view?.destroy()
     this.view = new EditorView({
       state: createEditorState('', EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
-          const text = update.state.doc.toString()
-          for (const listener of this.docListeners) listener(text)
-        }
+        if (update.docChanged) this.emit(update.state.doc.toString())
       })),
       parent,
     })
@@ -40,12 +37,17 @@ class EditorController {
     if (!view) return
     view.setState(
       createEditorState(text, EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
-          const next = update.state.doc.toString()
-          for (const listener of this.docListeners) listener(next)
-        }
+        if (update.docChanged) this.emit(update.state.doc.toString())
       })),
     )
+    // Stats and the outline derive from doc changes, so a freshly loaded
+    // document must announce itself or the status bar reads zero.
+    this.emit(text)
+  }
+
+  /** Notifies listeners without an edit, e.g. after loading a document. */
+  private emit(text: string): void {
+    for (const listener of this.docListeners) listener(text)
   }
 
   getText(): string {
