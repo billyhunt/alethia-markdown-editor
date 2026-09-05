@@ -1,27 +1,169 @@
 /**
- * The contract between the renderer and the Electron main process.
+ * The contract between renderer and main.
  *
- * This file is compiled into BOTH the renderer and the electron TypeScript
- * projects, so it must contain types and plain constants only -- never any
+ * Compiled into BOTH TypeScript projects, so it holds types only -- never a
  * runtime import of `electron` or of DOM globals.
- *
- * Phase 1 exposes the minimum needed to prove the bridge works end to end.
- * Later phases grow `MarkdownApi` with dialog/fs/folder/settings surfaces.
  */
+import type { HostCommand } from './ipc'
+import type { Settings, SettingsPatch } from './settings'
+
+export type Unsubscribe = () => void
+export type PathKind = 'file' | 'dir'
+
+export interface FileNode {
+  name: string
+  /** Absolute path. */
+  path: string
+  kind: PathKind
+  /** Directories only, already pruned to those containing markdown. */
+  children?: FileNode[]
+}
+
+export interface FolderTree {
+  root: string
+  tree: FileNode
+  /** True when the entry cap was hit and the tree is incomplete. */
+  truncated: boolean
+}
+
+export interface ReadFileResult {
+  path: string
+  /** UTF-8, BOM stripped, line endings untouched. */
+  content: string
+  mtimeMs: number
+}
+
+export interface WriteFileOptions {
+  /** The mtime the renderer last saw. Null or undefined skips the check. */
+  expectedMtimeMs?: number | null
+  /** Write even though the file changed on disk since it was loaded. */
+  force?: boolean
+}
+
+export type WriteFileResult =
+  | { ok: true; mtimeMs: number }
+  | { ok: false; reason: 'conflict'; diskMtimeMs: number }
+
+export interface StatResult {
+  kind: PathKind
+  mtimeMs: number
+  size: number
+}
+
+export type SaveChangesChoice = 'save' | 'dontSave' | 'cancel'
+
+export interface SaveAsOptions {
+  suggestedName?: string
+  defaultDir?: string | null
+}
+
+export type FileChangeEvent =
+  | { path: string; kind: 'changed'; mtimeMs: number }
+  | { path: string; kind: 'removed' }
+
+export interface OpenPathEvent {
+  path: string
+  kind: PathKind
+}
+
+export interface CloseRequestedEvent {
+  reason: 'close' | 'quit'
+}
 
 export interface RendererReadyResult {
+  /** Queued open-with paths from open-file / argv / second-instance. */
+  pendingPaths: OpenPathEvent[]
+  settings: Settings
   platform: string
   version: string
   isPackaged: boolean
 }
 
+export interface DocumentInfo {
+  filePath: string | null
+  edited: boolean
+}
+
 export interface MarkdownApi {
+  dialog: {
+    /** Native open dialog filtered to markdown. Null on cancel. Grants the path. */
+    openFile(): Promise<string | null>
+    /** Native directory dialog. Null on cancel. Grants the whole subtree. */
+    openFolder(): Promise<string | null>
+    /** Native save dialog, forced to a markdown extension. Null on cancel. */
+    saveAs(opts?: SaveAsOptions): Promise<string | null>
+    /** macOS three-button sheet: Save / Don't Save / Cancel. */
+    confirmSaveChanges(opts: { fileName: string }): Promise<SaveChangesChoice>
+    showError(opts: { title: string; message: string }): Promise<void>
+  }
+
+  fs: {
+    /** Rejects with EPERM when the path was never granted. */
+    readFile(path: string): Promise<ReadFileResult>
+    writeFile(path: string, content: string, opts?: WriteFileOptions): Promise<WriteFileResult>
+    /** Null when the path does not exist. Requires a granted path. */
+    stat(path: string): Promise<StatResult | null>
+  }
+
+  folder: {
+    list(root: string): Promise<FolderTree>
+    /** Replaces any previous folder watch. Emits on.folderTree. */
+    watch(root: string): Promise<void>
+    unwatch(): Promise<void>
+  }
+
+  document: {
+    /** Replaces any previous document watch. Emits on.fileChanged. */
+    watch(path: string): Promise<void>
+    unwatch(): Promise<void>
+  }
+
+  recents: {
+    list(): Promise<string[]>
+    add(path: string): Promise<void>
+    clear(): Promise<void>
+  }
+
+  settings: {
+    get(): Promise<Settings>
+    /** Returns the merged result. */
+    patch(patch: SettingsPatch): Promise<Settings>
+  }
+
+  window: {
+    /** force skips the close-requested round trip; only after ensureClosable(). */
+    close(opts?: { force?: boolean }): Promise<void>
+    /** The renderer declined a close or quit; clears the quitting flag. */
+    cancelClose(): Promise<void>
+    minimize(): Promise<void>
+    toggleMaximize(): Promise<void>
+    isFullScreen(): Promise<boolean>
+    /** Sets title, represented filename (proxy icon) and the edited dot. */
+    setDocument(info: DocumentInfo): Promise<void>
+  }
+
   app: {
-    /**
-     * Called once by the renderer after its event listeners are registered.
-     * Later phases use the return value to flush queued "open with" paths and
-     * to hand over persisted settings.
-     */
+    /** Call once after listeners are registered. Flushes queued open-with paths. */
     rendererReady(): Promise<RendererReadyResult>
+    /** Validates and grants a dropped path. Rejects non-markdown files. */
+    grantDroppedPath(path: string): Promise<OpenPathEvent>
+  }
+
+  shell: {
+    /** http(s) only; anything else rejects. */
+    openExternal(url: string): Promise<void>
+    showItemInFolder(path: string): Promise<void>
+  }
+
+  /** Synchronous; wraps electron.webUtils.getPathForFile for drag and drop. */
+  getPathForFile(file: File): string
+
+  on: {
+    command(cb: (cmd: HostCommand) => void): Unsubscribe
+    openPath(cb: (e: OpenPathEvent) => void): Unsubscribe
+    fileChanged(cb: (e: FileChangeEvent) => void): Unsubscribe
+    folderTree(cb: (t: FolderTree) => void): Unsubscribe
+    closeRequested(cb: (e: CloseRequestedEvent) => void): Unsubscribe
+    fullScreenChanged(cb: (isFullScreen: boolean) => void): Unsubscribe
   }
 }
