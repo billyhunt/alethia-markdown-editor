@@ -1,6 +1,8 @@
 import { EditorView } from '@codemirror/view'
 import { EditorSelection } from '@codemirror/state'
 import { createEditorState } from './createEditor.ts'
+import { EDITOR_COMMANDS } from './commands.ts'
+import type { EditorCommand } from '../../shared/ipc.ts'
 
 /**
  * Owns the single EditorView. React mounts it once and never re-renders it --
@@ -64,6 +66,23 @@ class EditorController {
     view.focus()
   }
 
+
+  /** Runs a formatting or history command; a no-op when nothing is mounted. */
+  exec(command: EditorCommand): boolean {
+    const view = this.view
+    if (!view) return false
+    view.focus()
+    return EDITOR_COMMANDS[command]({ state: view.state, dispatch: view.dispatch })
+  }
+
+  hasFocus(): boolean {
+    return this.view?.hasFocus ?? false
+  }
+
+  /** Current state, for callers that need to derive stats or an outline. */
+  getState() {
+    return this.view?.state ?? null
+  }
 
   setCursor(pos: number): void {
     const view = this.view

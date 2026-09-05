@@ -1,18 +1,30 @@
 .app {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 1fr;
   height: 100vh;
+  overflow: hidden;
 }
 
 /*
- * The only element carrying a drag region. It is a fixed strip rather than a
- * container so no scrollable content is ever inside it -- a drag region
- * swallows mousedown, which would make anything beneath it unclickable.
+ * The ONLY element carrying a drag region. It is absolutely positioned across
+ * both columns rather than wrapping anything: a drag region swallows
+ * mousedown, so any tree row inside it would become unclickable. Sidebar and
+ * editor content start below it via padding instead.
  */
 .titlebar {
-  flex: 0 0 var(--titlebar-h);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-h);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Clears the traffic lights, which macOS draws over our chrome. */
+  padding-left: 84px;
   -webkit-app-region: drag;
   -webkit-user-select: none;
+  z-index: 5;
 }
 
 .titlebar button,
@@ -21,8 +33,189 @@
   -webkit-app-region: no-drag;
 }
 
+body.is-fullscreen .titlebar {
+  height: 0;
+  overflow: hidden;
+}
+
+.titlebar-name {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--code-bg);
+  color: var(--text);
+}
+
+/* --- sidebar ------------------------------------------------------------ */
+
+.sidebar {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  padding-top: var(--titlebar-h);
+  overflow: hidden;
+}
+
+body.is-fullscreen .sidebar,
+body.is-fullscreen .main-pane {
+  padding-top: 0;
+}
+
+.sidebar-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0.5rem 0.25rem;
+}
+
+.sidebar-tabs button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.35rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.sidebar-tabs button.is-active {
+  background: var(--code-bg);
+  color: var(--text);
+}
+
+.sidebar-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-bottom: 1rem;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-row:hover {
+  background: var(--code-bg);
+}
+
+.tree-row.is-current {
+  background: var(--code-bg);
+  font-weight: 600;
+}
+
+.tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-dir {
+  color: var(--text-muted);
+}
+
+.outline-row {
+  color: var(--text-muted);
+}
+
+.sidebar-empty {
+  padding: 1rem 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--code-bg);
+}
+
+/* --- main pane ---------------------------------------------------------- */
+
+.main-pane {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding-top: var(--titlebar-h);
+}
+
 .editor-host {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.banner-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
+.statusbar {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.72rem;
 }
