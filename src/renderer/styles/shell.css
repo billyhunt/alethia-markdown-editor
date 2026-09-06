@@ -107,7 +107,7 @@ body.is-fullscreen .main-pane {
   font-family: var(--font-mono);
   font-size: 0.66rem;
   font-weight: 500;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 0.55rem 0;
   cursor: pointer;
@@ -323,4 +323,14 @@ body.is-fullscreen .main-pane {
 .toolbar-button:active {
   background: var(--border);
   color: var(--bg);
+}
+
+.history-row {
+  justify-content: space-between;
+}
+
+.history-size {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  flex: 0 0 auto;
 }

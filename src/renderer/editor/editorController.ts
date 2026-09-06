@@ -51,6 +51,20 @@ class EditorController {
     for (const listener of this.docListeners) listener(text)
   }
 
+  /**
+   * Replaces the whole document as a normal edit, so it joins the undo
+   * history -- unlike setDocument, which builds a fresh state and discards it.
+   */
+  replaceAll(text: string): void {
+    const view = this.view
+    if (!view) return
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: text },
+      userEvent: 'input.restore',
+    })
+    view.focus()
+  }
+
   getText(): string {
     return this.view?.state.doc.toString() ?? ''
   }

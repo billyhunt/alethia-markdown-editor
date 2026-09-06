@@ -2,6 +2,7 @@ import { editorController } from '../editor/editorController.ts'
 import { openFolderDialog } from '../services/fileOps.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import FileTree from './FileTree.tsx'
+import History from './History.tsx'
 
 export default function Sidebar() {
   const { tree, truncated, sidebarTab, outline, setSidebarTab } = useWorkspaceStore()
@@ -23,10 +24,19 @@ export default function Sidebar() {
         >
           Outline
         </button>
+        <button
+          type="button"
+          className={sidebarTab === 'history' ? 'is-active' : ''}
+          onClick={() => setSidebarTab('history')}
+        >
+          History
+        </button>
       </div>
 
       <div className="sidebar-body">
-        {sidebarTab === 'files' ? (
+        {sidebarTab === 'history' ? (
+          <History />
+        ) : sidebarTab === 'files' ? (
           tree ? (
             <>
               <FileTree node={tree} depth={0} />

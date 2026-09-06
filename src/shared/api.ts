@@ -95,6 +95,16 @@ export type FileContextResult =
   | { action: 'rename'; path: string }
   | { action: 'trashed'; path: string }
 
+/** One past state of a document, newest first in listings. */
+export interface DocumentVersion {
+  /** Opaque; pass back to read a version. */
+  id: string
+  /** Epoch milliseconds. */
+  savedAt: number
+  hash: string
+  bytes: number
+}
+
 export interface DocumentInfo {
   filePath: string | null
   edited: boolean
@@ -168,6 +178,13 @@ export interface MarkdownApi {
     rendererReady(): Promise<RendererReadyResult>
     /** Validates and grants a dropped path. Rejects non-markdown files. */
     grantDroppedPath(path: string): Promise<OpenPathEvent>
+  }
+
+  versions: {
+    /** Past states of a file, newest first. */
+    list(path: string): Promise<DocumentVersion[]>
+    read(path: string, id: string): Promise<string>
+    clear(path: string): Promise<void>
   }
 
   print: {

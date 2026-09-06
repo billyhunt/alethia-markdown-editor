@@ -18,6 +18,7 @@ import { takePendingPaths } from './openWith.ts'
 import { markForceClose, setQuitting } from './window.ts'
 import { showFileContextMenu } from './fileMenu.ts'
 import { exportPdf } from './printing.ts'
+import { clearVersions, listVersions, readVersion } from './versions.ts'
 import { unwatchDocument, unwatchFolder, watchDocument, watchFolder } from './watcher.ts'
 import type {
   DocumentInfo,
@@ -149,6 +150,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.menuFileContext, (event, target: unknown) =>
     showFileContextMenu(winOf(event), target),
   )
+
+  // --- versions ------------------------------------------------------------
+  ipcMain.handle(IPC.versionsList, (_event, filePath: unknown) => listVersions(filePath))
+  ipcMain.handle(IPC.versionsRead, (_event, filePath: unknown, id: unknown) =>
+    readVersion(filePath, id),
+  )
+  ipcMain.handle(IPC.versionsClear, (_event, filePath: unknown) => clearVersions(filePath))
 
   // --- printing ------------------------------------------------------------
   ipcMain.handle(IPC.printExportPdf, (event, suggestedName: unknown) =>

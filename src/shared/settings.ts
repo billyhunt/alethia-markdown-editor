@@ -7,6 +7,7 @@ export interface Settings {
   theme: ThemePreference
   sidebar: { visible: boolean; width: number }
   toolbarVisible: boolean
+  autosave: boolean
   recentFiles: string[]
 }
 
@@ -17,6 +18,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   sidebar: { visible: true, width: 260 },
   toolbarVisible: true,
+  autosave: true,
   recentFiles: [],
 }
 

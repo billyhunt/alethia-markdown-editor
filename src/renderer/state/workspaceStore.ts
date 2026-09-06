@@ -13,8 +13,9 @@ export interface WorkspaceState {
   truncated: boolean
   sidebarVisible: boolean
   sidebarWidth: number
-  sidebarTab: 'files' | 'outline'
+  sidebarTab: 'files' | 'outline' | 'history'
   toolbarVisible: boolean
+  autosave: boolean
   outline: OutlineEntry[]
   words: number
   chars: number
@@ -26,8 +27,9 @@ export interface WorkspaceState {
   setFolder: (folder: FolderTree | null) => void
   setSidebarVisible: (visible: boolean) => void
   setSidebarWidth: (width: number) => void
-  setSidebarTab: (tab: 'files' | 'outline') => void
+  setSidebarTab: (tab: 'files' | 'outline' | 'history') => void
   setToolbarVisible: (visible: boolean) => void
+  setAutosave: (autosave: boolean) => void
   setOutline: (outline: OutlineEntry[]) => void
   setStats: (stats: { words: number; chars: number }) => void
   setNotice: (notice: WorkspaceState['notice']) => void
@@ -43,6 +45,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   sidebarWidth: 260,
   sidebarTab: 'files',
   toolbarVisible: true,
+  autosave: true,
   outline: [],
   words: 0,
   chars: 0,
@@ -60,6 +63,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
   setSidebarTab: (sidebarTab) => set({ sidebarTab }),
   setToolbarVisible: (toolbarVisible) => set({ toolbarVisible }),
+  setAutosave: (autosave) => set({ autosave }),
   setOutline: (outline) => set({ outline }),
   setStats: ({ words, chars }) => set({ words, chars }),
   setNotice: (notice) => set({ notice }),

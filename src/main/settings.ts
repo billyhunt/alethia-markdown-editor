@@ -26,6 +26,7 @@ function coerce(raw: unknown): Settings {
       typeof input.toolbarVisible === 'boolean'
         ? input.toolbarVisible
         : DEFAULT_SETTINGS.toolbarVisible,
+    autosave: typeof input.autosave === 'boolean' ? input.autosave : DEFAULT_SETTINGS.autosave,
     recentFiles: Array.isArray(input.recentFiles)
       ? input.recentFiles.filter((entry): entry is string => typeof entry === 'string').slice(0, 20)
       : [],

@@ -72,6 +72,13 @@ export function dispatchHostCommand(command: HostCommand): void {
       void api.settings.patch({ toolbarVisible: next })
       return
     }
+    case 'view:toggleAutosave': {
+      const store = useWorkspaceStore.getState()
+      const next = !store.autosave
+      store.setAutosave(next)
+      void api.settings.patch({ autosave: next })
+      return
+    }
     case 'view:toggleFocusMode': {
       useWorkspaceStore.getState().toggleFocusMode()
       return

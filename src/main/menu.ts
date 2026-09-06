@@ -116,6 +116,7 @@ export function buildApplicationMenu(): void {
       submenu: [
         cmd('Toggle Sidebar', 'view:toggleSidebar', 'CmdOrCtrl+\\'),
         cmd('Toggle Format Bar', 'view:toggleToolbar', 'CmdOrCtrl+Shift+T'),
+        cmd('Autosave', 'view:toggleAutosave'),
         { type: 'separator' },
         cmd('Focus Mode', 'view:toggleFocusMode', 'F8'),
         cmd('Typewriter Mode', 'view:toggleTypewriterMode', 'F9'),

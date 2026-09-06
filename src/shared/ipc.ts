@@ -35,6 +35,9 @@ export const IPC = {
   appGrantDroppedPath: 'app:grantDroppedPath',
   menuFileContext: 'menu:fileContext',
   printExportPdf: 'print:exportPdf',
+  versionsList: 'versions:list',
+  versionsRead: 'versions:read',
+  versionsClear: 'versions:clear',
   shellOpenExternal: 'shell:openExternal',
   shellShowItemInFolder: 'shell:showItemInFolder',
 
@@ -82,6 +85,7 @@ export type HostCommand =
   | 'file:exportPdf'
   | 'view:toggleSidebar'
   | 'view:toggleToolbar'
+  | 'view:toggleAutosave'
   | 'view:toggleFocusMode'
   | 'view:toggleTypewriterMode'
   | `edit:${'undo' | 'redo'}`

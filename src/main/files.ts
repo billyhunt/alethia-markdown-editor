@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { assertReadable, assertReadableDir, assertWritable, grantFile } from './paths.ts'
+import { snapshotVersion } from './versions.ts'
 import { MARKDOWN_EXTENSIONS } from '../shared/markdown.ts'
 import type {
   LineEnding,
@@ -97,6 +98,13 @@ export async function writeTextFile(
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
   }
+
+  // Keep whatever this save is about to replace, so nothing is ever lost to
+  // an autosave. Failure here must not stop the save itself.
+  await fs
+    .readFile(filePath, 'utf8')
+    .then((previous) => snapshotVersion(filePath, previous))
+    .catch(() => undefined)
 
   // Restore whatever endings the file arrived with.
   const onDisk = fromLf(content, opts.lineEnding ?? '\n')
