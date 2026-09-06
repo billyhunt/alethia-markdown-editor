@@ -4,6 +4,7 @@ import EditorPane from './components/EditorPane.tsx'
 import Sidebar from './components/Sidebar.tsx'
 import StatusBar from './components/StatusBar.tsx'
 import Titlebar from './components/Titlebar.tsx'
+import Toolbar from './components/Toolbar.tsx'
 import { editorController } from './editor/editorController.ts'
 import { countChars, countWords, extractOutline } from './editor/docStats.ts'
 import { useDocumentTitle, useHostEvents } from './hooks/useHostEvents.ts'
@@ -17,7 +18,8 @@ export default function App() {
   useDocumentTitle()
   useDropFiles()
 
-  const { sidebarVisible, sidebarWidth, focusMode, typewriterMode } = useWorkspaceStore()
+  const { sidebarVisible, sidebarWidth, toolbarVisible, focusMode, typewriterMode } =
+    useWorkspaceStore()
 
   useEffect(() => {
     editorController.setModes({ focus: focusMode, typewriter: typewriterMode })
@@ -52,6 +54,7 @@ export default function App() {
       <Titlebar />
       {sidebarVisible && <Sidebar />}
       <div className="main-pane">
+        {toolbarVisible && <Toolbar />}
         <Banner />
         <EditorPane />
         <StatusBar />

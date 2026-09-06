@@ -278,3 +278,49 @@ body.is-fullscreen .main-pane {
   padding: 1px 4px;
   outline: none;
 }
+
+/* --- format bar --------------------------------------------------------- */
+
+.toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border-bottom: var(--rule) solid var(--border);
+  background: var(--bg);
+  -webkit-user-select: none;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: stretch;
+}
+
+.toolbar-rule {
+  width: 2px;
+  background: var(--border);
+  margin: 0.35rem 0.4rem;
+}
+
+.toolbar-button {
+  min-width: 2.1rem;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.toolbar-button:hover {
+  background: var(--accent-hot);
+  color: #111111;
+}
+
+.toolbar-button:active {
+  background: var(--border);
+  color: var(--bg);
+}

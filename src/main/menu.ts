@@ -107,6 +107,7 @@ export function buildApplicationMenu(): void {
       // the open document.
       submenu: [
         cmd('Toggle Sidebar', 'view:toggleSidebar', 'CmdOrCtrl+\\'),
+        cmd('Toggle Format Bar', 'view:toggleToolbar', 'CmdOrCtrl+Shift+T'),
         { type: 'separator' },
         cmd('Focus Mode', 'view:toggleFocusMode', 'F8'),
         cmd('Typewriter Mode', 'view:toggleTypewriterMode', 'F9'),

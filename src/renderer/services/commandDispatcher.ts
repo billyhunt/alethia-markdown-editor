@@ -56,6 +56,13 @@ export function dispatchHostCommand(command: HostCommand): void {
     case 'file:revealInFinder':
       void revealInFinder()
       return
+    case 'view:toggleToolbar': {
+      const store = useWorkspaceStore.getState()
+      const next = !store.toolbarVisible
+      store.setToolbarVisible(next)
+      void api.settings.patch({ toolbarVisible: next })
+      return
+    }
     case 'view:toggleFocusMode': {
       useWorkspaceStore.getState().toggleFocusMode()
       return

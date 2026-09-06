@@ -14,6 +14,7 @@ export interface WorkspaceState {
   sidebarVisible: boolean
   sidebarWidth: number
   sidebarTab: 'files' | 'outline'
+  toolbarVisible: boolean
   outline: OutlineEntry[]
   words: number
   chars: number
@@ -26,6 +27,7 @@ export interface WorkspaceState {
   setSidebarVisible: (visible: boolean) => void
   setSidebarWidth: (width: number) => void
   setSidebarTab: (tab: 'files' | 'outline') => void
+  setToolbarVisible: (visible: boolean) => void
   setOutline: (outline: OutlineEntry[]) => void
   setStats: (stats: { words: number; chars: number }) => void
   setNotice: (notice: WorkspaceState['notice']) => void
@@ -40,6 +42,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   sidebarVisible: true,
   sidebarWidth: 260,
   sidebarTab: 'files',
+  toolbarVisible: true,
   outline: [],
   words: 0,
   chars: 0,
@@ -56,6 +59,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   setSidebarVisible: (sidebarVisible) => set({ sidebarVisible }),
   setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
   setSidebarTab: (sidebarTab) => set({ sidebarTab }),
+  setToolbarVisible: (toolbarVisible) => set({ toolbarVisible }),
   setOutline: (outline) => set({ outline }),
   setStats: ({ words, chars }) => set({ words, chars }),
   setNotice: (notice) => set({ notice }),

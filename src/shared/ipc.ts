@@ -78,6 +78,7 @@ export type HostCommand =
   | 'file:close'
   | 'file:revealInFinder'
   | 'view:toggleSidebar'
+  | 'view:toggleToolbar'
   | 'view:toggleFocusMode'
   | 'view:toggleTypewriterMode'
   | `edit:${'undo' | 'redo'}`

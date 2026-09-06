@@ -6,6 +6,7 @@ export interface Settings {
   lastFile: string | null
   theme: ThemePreference
   sidebar: { visible: boolean; width: number }
+  toolbarVisible: boolean
   recentFiles: string[]
 }
 
@@ -15,6 +16,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lastFile: null,
   theme: 'system',
   sidebar: { visible: true, width: 260 },
+  toolbarVisible: true,
   recentFiles: [],
 }
 

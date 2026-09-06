@@ -51,6 +51,10 @@ export default function FileTree({ node, depth }: Props) {
         className={`tree-row tree-file${node.path === currentPath ? ' is-current' : ''}`}
         style={indent}
         onClick={() => void openPath(node.path)}
+        // Double-click renames, the way Finder does. The single click still
+        // fires first and opens the file, which is what you want anyway --
+        // you can see what you are renaming.
+        onDoubleClick={() => setRenaming(true)}
         onContextMenu={onContextMenu}
         title={node.path}
       >

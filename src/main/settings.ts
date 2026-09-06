@@ -22,6 +22,10 @@ function coerce(raw: unknown): Settings {
         ? input.theme
         : DEFAULT_SETTINGS.theme,
     sidebar: { ...DEFAULT_SETTINGS.sidebar, ...(input.sidebar ?? {}) },
+    toolbarVisible:
+      typeof input.toolbarVisible === 'boolean'
+        ? input.toolbarVisible
+        : DEFAULT_SETTINGS.toolbarVisible,
     recentFiles: Array.isArray(input.recentFiles)
       ? input.recentFiles.filter((entry): entry is string => typeof entry === 'string').slice(0, 20)
       : [],

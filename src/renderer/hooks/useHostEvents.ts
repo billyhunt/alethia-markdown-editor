@@ -38,6 +38,7 @@ export function useHostEvents(): void {
       const workspace = useWorkspaceStore.getState()
       workspace.setSidebarVisible(ready.settings.sidebar.visible)
       workspace.setSidebarWidth(ready.settings.sidebar.width)
+      workspace.setToolbarVisible(ready.settings.toolbarVisible)
 
       // A path handed to us by Finder or argv wins over restoring last session.
       const pending = ready.pendingPaths
