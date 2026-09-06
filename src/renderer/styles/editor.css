@@ -33,7 +33,7 @@
 
 .cm-md-strong {
   font-weight: 600;
-  box-shadow: inset 0 -3px 0 var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent-hot);
 }
 
 .cm-md-em { font-style: italic; }
@@ -53,9 +53,10 @@
 }
 
 .cm-md-link {
-  color: var(--accent);
+  color: #111111;
+  background: var(--accent-hot);
+  padding: 0 0.2em;
   text-decoration: none;
-  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .cm-md-hr {
@@ -145,6 +146,13 @@
   border: 2px solid var(--border);
   padding: 0.35em 0.8em;
   text-align: left;
+}
+
+.cm-md-table strong {
+  background: var(--accent-hot);
+  color: #111111;
+  padding: 0 0.35em;
+  font-weight: 500;
 }
 
 .cm-md-table th {

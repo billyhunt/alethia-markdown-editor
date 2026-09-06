@@ -145,8 +145,8 @@ body.is-fullscreen .main-pane {
 }
 
 .tree-row.is-current {
-  background: var(--accent);
-  color: #f2f0eb;
+  background: var(--accent-hot);
+  color: #111111;
   font-weight: 500;
 }
 
