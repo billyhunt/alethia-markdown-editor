@@ -53,6 +53,19 @@ separate provisioning profile, App Sandbox entitlements, a release version, and
 a monotonically increasing Mac build number; those credentials and release
 choices are intentionally not stored in this repository.
 
+## Opening markdown files with Alethia
+
+The app declares itself a handler for `.md`, `.markdown`, `.mdown` and `.mkd`.
+Declaring it is not the same as being chosen, though: macOS keeps its own
+binding and leaves an existing one alone.
+
+To make it the default, right-click any markdown file in Finder, choose **Get
+Info**, pick Alethia under *Open with*, then **Change All…**.
+
+Note that a development run and an installed copy share one instance lock and
+one settings directory, because both are called Alethia. Quit one before
+launching the other, or the second will hand its file to the first and exit.
+
 ## Architecture
 
 Three processes, split under `src/`:

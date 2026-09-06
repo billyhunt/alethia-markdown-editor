@@ -26,5 +26,8 @@ fileAssociations:
     name: Markdown Document
     role: Editor
     mimeType: text/markdown
-    # Appears under "Open With" without stealing the default handler.
-    rank: Alternate
+    # Owner declares Alethia as a primary handler for markdown, so macOS
+    # offers it as the default rather than only listing it under "Open With".
+    # Which app actually wins is still Launch Services' decision, and an
+    # existing binding is left alone until the user changes it.
+    rank: Owner
