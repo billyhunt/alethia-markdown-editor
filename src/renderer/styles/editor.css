@@ -148,10 +148,14 @@
   text-align: left;
 }
 
-.cm-md-table strong {
+/* Bold in a table cell fills the WHOLE cell, as the design does -- a chip
+   floating inside a white cell reads as a mistake rather than a highlight. */
+.cm-md-table td:has(strong) {
   background: var(--accent-hot);
   color: #111111;
-  padding: 0 0.35em;
+}
+
+.cm-md-table td:has(strong) strong {
   font-weight: 500;
 }
 
