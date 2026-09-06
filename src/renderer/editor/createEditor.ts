@@ -16,6 +16,9 @@ export function createEditorState(doc: string, extra: Extension = []): EditorSta
       drawSelection(),
       dropCursor(),
       rectangularSelection(),
+      // rectangularSelection and Alt-click both produce multi-range
+      // selections, which the state collapses to one without this facet.
+      EditorState.allowMultipleSelections.of(true),
       EditorView.lineWrapping,
       markdownExtension,
       syntaxHighlighting(codeHighlightStyle),

@@ -10,7 +10,9 @@ export const IGNORED_DIR_NAMES = ['node_modules', '.git', 'dist', 'build', 'rele
 const lowerExt = (filePath: string): string => {
   const dot = filePath.lastIndexOf('.')
   const slash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
-  return dot > slash ? filePath.slice(dot).toLowerCase() : ''
+  // `dot > slash + 1` rather than `dot > slash`: a leading dot makes a hidden
+  // file, not an extension, so a file literally named ".md" is not markdown.
+  return dot > slash + 1 ? filePath.slice(dot).toLowerCase() : ''
 }
 
 export function isMarkdownPath(filePath: string): boolean {

@@ -35,24 +35,19 @@ export function validatePath(input: unknown): string {
 export function grantFile(filePath: string): string {
   const resolved = validatePath(filePath)
   grantedFiles.add(resolved)
+  realCache.delete(resolved)
   return resolved
 }
 
 export function grantRoot(dirPath: string): string {
   const resolved = validatePath(dirPath)
   grantedRoots.add(resolved)
+  realCache.delete(resolved)
   return resolved
 }
 
-const isInsideGrantedRoot = (target: string): boolean => {
-  for (const root of grantedRoots) {
-    if (target === root || target.startsWith(root + path.sep)) return true
-  }
-  return false
-}
-
 /**
- * Resolves symlinks so a granted path cannot be used to reach outside its
+ * Symlinks are resolved so a granted path cannot be used to reach outside its
  * root. For files that do not exist yet (Save As into a new name) the nearest
  * existing ancestor is realpath'd instead.
  */
@@ -69,15 +64,41 @@ async function realResolve(target: string): Promise<string> {
   }
 }
 
+const realCache = new Map<string, string>()
+
+async function realOf(target: string): Promise<string> {
+  const hit = realCache.get(target)
+  if (hit !== undefined) return hit
+  const resolved = await realResolve(target)
+  realCache.set(target, resolved)
+  return resolved
+}
+
+/**
+ * Membership is decided on the REAL path only.
+ *
+ * Accepting the literal path as well would let a symlink sitting inside a
+ * granted root grant access to whatever it points at, which is exactly the
+ * escape the realpath is meant to close. Grants are resolved too, because a
+ * root handed in as /var/... and a target resolving to /private/var/... are
+ * the same directory on macOS and must compare equal.
+ */
+async function isGranted(real: string): Promise<boolean> {
+  for (const filePath of grantedFiles) {
+    if (real === filePath || real === (await realOf(filePath))) return true
+  }
+  for (const root of grantedRoots) {
+    for (const candidate of [root, await realOf(root)]) {
+      if (real === candidate || real.startsWith(candidate + path.sep)) return true
+    }
+  }
+  return false
+}
+
 export async function assertReadable(input: unknown): Promise<string> {
   const target = validatePath(input)
   const real = await realResolve(target)
-  const granted =
-    grantedFiles.has(target) ||
-    grantedFiles.has(real) ||
-    isInsideGrantedRoot(target) ||
-    isInsideGrantedRoot(real)
-  if (!granted) throw new PathPermissionError()
+  if (!(await isGranted(real))) throw new PathPermissionError()
   // The app only ever reads markdown-ish text.
   if (!isReadablePath(real)) {
     throw new PathPermissionError('EPERM: unsupported file type')
@@ -88,18 +109,14 @@ export async function assertReadable(input: unknown): Promise<string> {
 export async function assertWritable(input: unknown): Promise<string> {
   const target = validatePath(input)
   const real = await realResolve(target)
-  const granted =
-    grantedFiles.has(target) ||
-    grantedFiles.has(real) ||
-    isInsideGrantedRoot(target) ||
-    isInsideGrantedRoot(real)
-  if (!granted) throw new PathPermissionError()
+  if (!(await isGranted(real))) throw new PathPermissionError()
   // Writes may never produce an executable or config file.
   if (!isMarkdownPath(real)) {
     throw new PathPermissionError('EPERM: refusing to write a non-markdown file')
   }
-  // Never let the renderer clobber our own settings.
-  const userData = path.resolve(app.getPath('userData'))
+  // Never let the renderer clobber our own settings. Resolved, because
+  // getPath can hand back a path that traverses a symlink.
+  const userData = await realOf(app.getPath('userData'))
   if (real === userData || real.startsWith(userData + path.sep)) {
     throw new PathPermissionError('EPERM: refusing to write inside userData')
   }
@@ -110,8 +127,6 @@ export async function assertWritable(input: unknown): Promise<string> {
 export async function assertReadableDir(input: unknown): Promise<string> {
   const target = validatePath(input)
   const real = await realResolve(target)
-  if (!isInsideGrantedRoot(target) && !isInsideGrantedRoot(real)) {
-    throw new PathPermissionError()
-  }
+  if (!(await isGranted(real))) throw new PathPermissionError()
   return target
 }
