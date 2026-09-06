@@ -18,15 +18,42 @@ import type { DocumentVersion } from '../shared/api.ts'
  * keep is whatever a save is about to overwrite.
  */
 
-/** Beyond this, the oldest snapshots for a file are discarded. */
-const MAX_VERSIONS_PER_FILE = 200
+/** A hard ceiling, reached only after a very long editing session. */
+const MAX_VERSIONS_PER_FILE = 500
+
+const HOUR = 3_600_000
+const DAY = 24 * HOUR
 
 /**
- * Autosave fires every couple of seconds, and every keystroke changes the
- * content, so dedupe alone would not stop a snapshot per save. Successive
- * snapshots of the same file are spaced out instead.
+ * Recent history is kept in full and older history is thinned, rather than
+ * spacing snapshots apart as they are taken.
+ *
+ * Throttling at write time looked tidier but was wrong: it meant a small edit
+ * and its reversal left no trace, so the obvious way to check the feature --
+ * change something, look at the history -- showed nothing.
+ *
+ * Everything from the last hour survives; the previous day keeps one version
+ * per hour; older than that, one per day.
  */
-const MIN_INTERVAL_MS = 45_000
+function thin(versions: DocumentVersion[]): DocumentVersion[] {
+  const now = Date.now()
+  const seen = new Set<number>()
+  const doomed: DocumentVersion[] = []
+
+  for (const version of versions) {
+    const age = now - version.savedAt
+    if (age <= HOUR) continue
+
+    const bucket = age <= DAY ? Math.floor(version.savedAt / HOUR) : Math.floor(version.savedAt / DAY)
+    const scope = age <= DAY ? 'h' : 'd'
+    const key = Number(`${scope === 'h' ? 1 : 2}${bucket}`)
+    // Versions arrive newest first, so the first of a bucket is its keeper.
+    if (seen.has(key)) doomed.push(version)
+    else seen.add(key)
+  }
+
+  return doomed
+}
 
 const VERSION_FILE = /^(\d+)-([0-9a-f]{8})\.snapshot$/
 
@@ -40,6 +67,22 @@ const hashOf = (content: string): string =>
   crypto.createHash('sha1').update(content).digest('hex').slice(0, 8)
 
 const dirFor = (filePath: string): string => path.join(versionsRoot(), keyFor(filePath))
+
+/**
+ * The newest stamp handed out per file.
+ *
+ * Snapshots are named by millisecond, and two saves can land inside the same
+ * one -- a manual save racing an autosave, say. That would leave their order
+ * undefined, and if their content hashes also matched, the second would
+ * overwrite the first. Stamps are therefore forced to increase.
+ */
+const lastStamp = new Map<string, number>()
+
+function nextStamp(dir: string): number {
+  const stamp = Math.max(Date.now(), (lastStamp.get(dir) ?? 0) + 1)
+  lastStamp.set(dir, stamp)
+  return stamp
+}
 
 async function entriesFor(filePath: string): Promise<DocumentVersion[]> {
   const dir = dirFor(filePath)
@@ -69,9 +112,8 @@ async function entriesFor(filePath: string): Promise<DocumentVersion[]> {
 /**
  * Records `content` as a past state of `filePath`.
  *
- * Skips when the newest snapshot already holds this content, and when the
- * newest is too recent -- except for the very first, so a file always gets an
- * initial snapshot the moment it is first written through the app.
+ * The only thing skipped is a repeat of the newest snapshot, so a save that
+ * changed nothing does not add an entry.
  */
 export async function snapshotVersion(filePath: string, content: string): Promise<void> {
   if (content.length === 0) return
@@ -79,12 +121,7 @@ export async function snapshotVersion(filePath: string, content: string): Promis
   const dir = dirFor(filePath)
   const existing = await entriesFor(filePath)
   const hash = hashOf(content)
-  const newest = existing[0]
-
-  if (newest) {
-    if (newest.hash === hash) return
-    if (Date.now() - newest.savedAt < MIN_INTERVAL_MS) return
-  }
+  if (existing[0]?.hash === hash) return
 
   await fs.mkdir(dir, { recursive: true })
   // Keeps the originating path discoverable for maintenance and cleanup,
@@ -94,11 +131,12 @@ export async function snapshotVersion(filePath: string, content: string): Promis
       flag: 'w',
     })
     .catch(() => undefined)
-  await fs.writeFile(path.join(dir, `${Date.now()}-${hash}.snapshot`), content, 'utf8')
+  await fs.writeFile(path.join(dir, `${nextStamp(dir)}-${hash}.snapshot`), content, 'utf8')
 
   const all = await entriesFor(filePath)
-  for (const stale of all.slice(MAX_VERSIONS_PER_FILE)) {
-    await fs.rm(path.join(dir, stale.id), { force: true }).catch(() => undefined)
+  const stale = [...thin(all), ...all.slice(MAX_VERSIONS_PER_FILE)]
+  for (const version of stale) {
+    await fs.rm(path.join(dir, version.id), { force: true }).catch(() => undefined)
   }
 }
 

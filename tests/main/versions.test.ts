@@ -25,7 +25,9 @@ afterAll(async () => {
   await fs.rm(path.join(USER_DATA, 'versions'), { recursive: true, force: true })
 })
 
-/** Snapshots are throttled, so tests that need several rewind the clock. */
+const HOUR = 3_600_000
+
+/** Ages a file's snapshots so the thinning rules can be exercised. */
 async function backdate(filePath: string, byMs: number) {
   const dir = path.join(
     USER_DATA,
@@ -53,36 +55,38 @@ describe('snapshotVersion', () => {
     expect(await readVersion(file, versions[0].id)).toBe('# one')
   })
 
-  it('skips a snapshot whose content matches the newest', async () => {
+  it('skips a repeat of the newest snapshot, so a no-op save adds nothing', async () => {
     const file = at('dupe.md')
     await fs.writeFile(file, 'x')
     await snapshotVersion(file, 'same')
-    await backdate(file, 60_000)
     await snapshotVersion(file, 'same')
     expect(await listVersions(file)).toHaveLength(1)
   })
 
-  it('throttles successive snapshots so autosave cannot flood the history', async () => {
-    const file = at('throttle.md')
+  it('records back-to-back saves, however close together', async () => {
+    // A small edit and its reversal must both leave a trace: throttling here
+    // is what made the feature look broken.
+    const file = at('rapid.md')
     await fs.writeFile(file, 'x')
     await snapshotVersion(file, 'v1')
-    // Different content, but immediately after the first.
     await snapshotVersion(file, 'v2')
-    expect(await listVersions(file)).toHaveLength(1)
-  })
-
-  it('records again once the interval has passed', async () => {
-    const file = at('spaced.md')
-    await fs.writeFile(file, 'x')
-    await snapshotVersion(file, 'v1')
-    await backdate(file, 60_000)
-    await snapshotVersion(file, 'v2')
+    await snapshotVersion(file, 'v3')
 
     const versions = await listVersions(file)
-    expect(versions).toHaveLength(2)
+    expect(versions).toHaveLength(3)
     // Newest first.
-    expect(await readVersion(file, versions[0].id)).toBe('v2')
-    expect(await readVersion(file, versions[1].id)).toBe('v1')
+    expect(await readVersion(file, versions[0].id)).toBe('v3')
+    expect(await readVersion(file, versions[2].id)).toBe('v1')
+  })
+
+  it('re-records content that reappears after something else', async () => {
+    // Type a character, save, delete it, save: the original comes back, and
+    // that is a distinct point in the history.
+    const file = at('reversal.md')
+    await fs.writeFile(file, 'x')
+    await snapshotVersion(file, 'original')
+    await snapshotVersion(file, 'original!')
+    expect(await listVersions(file)).toHaveLength(2)
   })
 
   it('ignores empty content, which would only ever be a mistake to restore', async () => {
@@ -102,6 +106,33 @@ describe('snapshotVersion', () => {
 
     expect(await readVersion(one, (await listVersions(one))[0].id)).toBe('content one')
     expect(await readVersion(two, (await listVersions(two))[0].id)).toBe('content two')
+  })
+})
+
+describe('thinning', () => {
+  it('keeps everything from the last hour', async () => {
+    const file = at('recent.md')
+    await fs.writeFile(file, 'x')
+    for (const body of ['a', 'b', 'c', 'd']) await snapshotVersion(file, body)
+    expect(await listVersions(file)).toHaveLength(4)
+  })
+
+  it('keeps one per hour once versions are older than an hour', async () => {
+    const file = at('hourly.md')
+    await fs.writeFile(file, 'x')
+    await snapshotVersion(file, 'a')
+    await snapshotVersion(file, 'b')
+    await snapshotVersion(file, 'c')
+    expect(await listVersions(file)).toHaveLength(3)
+
+    // Age them all into the same past hour, then add one more to trigger the
+    // prune: the three collapse to the newest of that hour.
+    await backdate(file, 3 * HOUR)
+    await snapshotVersion(file, 'd')
+
+    const versions = await listVersions(file)
+    expect(versions).toHaveLength(2)
+    expect(await readVersion(file, versions[0].id)).toBe('d')
   })
 })
 
