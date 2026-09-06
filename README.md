@@ -31,6 +31,13 @@ npm run dev
 `npm run dev` starts Vite and launches Electron against it, with hot reload for
 the renderer and an automatic restart when main-process code changes.
 
+A `postinstall` step renames the development Electron bundle to Alethia and
+gives it the app icon. macOS reads the launched bundle's `Info.plist` before
+any application code runs, so without it the menu bar, Cmd-Tab and Dock all
+say "Electron" no matter what the app calls itself. `npm install` restores the
+stock bundle, which is why the step re-runs each time. Packaged builds need
+none of this.
+
 ## Building
 
 ```bash

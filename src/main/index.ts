@@ -1,4 +1,5 @@
-import { app, BrowserWindow } from 'electron'
+import path from 'node:path'
+import { app, BrowserWindow, nativeImage } from 'electron'
 import { createMainWindow, getQuitting, setQuitting } from './window.ts'
 import { registerIpcHandlers } from './ipc.ts'
 import { hardenSession } from './security.ts'
@@ -29,6 +30,16 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(async () => {
+    // In development the Dock shows the Electron bundle's icon, because that
+    // is the app macOS actually launched. This is the one piece of its
+    // identity that can still be replaced once we are running.
+    if (!app.isPackaged) {
+      const icon = nativeImage.createFromPath(
+        path.join(import.meta.dirname, '..', 'build', 'icon.png'),
+      )
+      if (!icon.isEmpty()) app.dock?.setIcon(icon)
+    }
+
     loadSettings()
     grantPersistedRecents()
     applyTheme(getSettings().theme)

@@ -8,6 +8,7 @@
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
+    "postinstall": "node scripts/brand-dev-electron.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
