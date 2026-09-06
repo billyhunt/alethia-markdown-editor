@@ -17,14 +17,17 @@ the renderer and an automatic restart when main-process code changes.
 ## Building
 
 ```bash
-npm run package   # unsigned .app in release/mac-arm64/
-npm run dist      # .dmg (requires a Developer ID certificate)
+npm test          # unit and regression suite
+npm run package   # unsigned Apple-silicon .app in release/mac-arm64/
+npm run dist      # unsigned Apple-silicon .dmg in release/
 ```
 
-`npm run package` produces an unsigned build for local use. macOS may refuse to
-open it on first launch; `codesign --force --deep --sign - "release/mac-arm64/Alethia.app"`
-clears that. Signing and notarization are configured but off — see the comment
-in `electron-builder.yml`.
+`npm run package` is a local smoke-test build, not a distributable release.
+Before distributing outside the App Store, configure Developer ID signing,
+hardened runtime, entitlements, and notarization. A Mac App Store build needs a
+separate provisioning profile, App Sandbox entitlements, a release version, and
+a monotonically increasing Mac build number; those credentials and release
+choices are intentionally not stored in this repository.
 
 ## Architecture
 
@@ -76,6 +79,8 @@ accelerators drive the same commands.
 - **Raw HTML blocks are shown as source**, never rendered.
 - **Relative image paths are not resolved yet** — that needs a custom protocol
   handler, since the CSP blocks `file:` images.
-- **There are no automated tests.** The security boundary and the reveal engine
-  were verified by scripted assertions during development, but nothing pins that
-  behaviour down against regressions.
+- **The automated suite covers core regressions, not every workflow.** It
+  exercises markdown recognition, live-preview reveal logic, formatting,
+  document statistics, table navigation, path grants, and line-ending
+  preservation. Native file dialogs, printing, session restore, and external
+  file-change prompts still need manual release testing.
