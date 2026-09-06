@@ -125,6 +125,51 @@ function showConflictNotice(filePath: string, text: string): void {
   })
 }
 
+/** Re-lists the open workspace folder, e.g. after a rename or a trash. */
+export async function refreshFolder(): Promise<void> {
+  const root = useWorkspaceStore.getState().folderRoot
+  if (!root) return
+  try {
+    useWorkspaceStore.getState().setFolder(await api.folder.list(root))
+  } catch {
+    // A folder that has gone away is not worth interrupting the user over.
+  }
+}
+
+/**
+ * The open document was moved to the Trash. Keep the text in the buffer -- it
+ * is the only surviving copy -- but detach it from a path that no longer
+ * exists, so Save prompts for a new location instead of recreating the file.
+ */
+export function forgetTrashedFile(filePath: string): void {
+  const doc = useDocumentStore.getState()
+  if (doc.filePath !== filePath) return
+  doc.load({ filePath: null, text: editorController.getText(), mtimeMs: null })
+  doc.setDirty(true)
+  void api.document.unwatch()
+  useWorkspaceStore.getState().setNotice({
+    message: 'Moved to Trash. The text is still open here, unsaved.',
+    actions: [{ label: 'Dismiss', run: () => useWorkspaceStore.getState().setNotice(null) }],
+  })
+}
+
+export async function renameFile(filePath: string, name: string): Promise<void> {
+  const wasOpen = useDocumentStore.getState().filePath === filePath
+  try {
+    const next = await api.fs.rename(filePath, name)
+    if (wasOpen) {
+      // Follow the file: the buffer is unchanged, only its identity moved.
+      const doc = useDocumentStore.getState()
+      doc.load({ filePath: next, text: doc.savedText, mtimeMs: doc.mtimeMs })
+      await api.recents.add(next)
+      await api.document.watch(next)
+    }
+    await refreshFolder()
+  } catch (error) {
+    await api.dialog.showError({ title: 'Could not rename', message: unwrapIpcError(error) })
+  }
+}
+
 export async function closeDocument(): Promise<void> {
   if (!(await ensureClosable())) return
   // Closing a file keeps the workspace: the folder is the context, not the doc.

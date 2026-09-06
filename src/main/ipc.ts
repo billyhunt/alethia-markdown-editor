@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { isReadablePath } from '../shared/markdown.ts'
-import { readTextFile, statPath, writeTextFile } from './files.ts'
+import { readTextFile, renameFile, statPath, writeTextFile } from './files.ts'
 import { listMarkdownTree } from './folder.ts'
 import {
   confirmSaveChanges,
@@ -16,6 +16,7 @@ import { addRecent, clearRecents, listRecents } from './recents.ts'
 import { grantFile, grantRoot, validatePath } from './paths.ts'
 import { takePendingPaths } from './openWith.ts'
 import { markForceClose, setQuitting } from './window.ts'
+import { showFileContextMenu } from './fileMenu.ts'
 import { unwatchDocument, unwatchFolder, watchDocument, watchFolder } from './watcher.ts'
 import type {
   DocumentInfo,
@@ -61,6 +62,9 @@ export function registerIpcHandlers(): void {
     writeTextFile(filePath, content, asObject(opts) as WriteFileOptions),
   )
   ipcMain.handle(IPC.fsStat, (_event, filePath: unknown) => statPath(filePath))
+  ipcMain.handle(IPC.fsRename, (_event, filePath: unknown, name: unknown) =>
+    renameFile(filePath, name),
+  )
 
   // --- folder --------------------------------------------------------------
   ipcMain.handle(IPC.folderList, (_event, root: unknown) => listMarkdownTree(root))
@@ -139,6 +143,11 @@ export function registerIpcHandlers(): void {
     if (!isReadablePath(target)) throw new Error('EPERM: not a markdown file')
     return { path: grantFile(target), kind: 'file' }
   })
+
+  // --- context menu --------------------------------------------------------
+  ipcMain.handle(IPC.menuFileContext, (event, target: unknown) =>
+    showFileContextMenu(winOf(event), target),
+  )
 
   // --- shell ---------------------------------------------------------------
   ipcMain.handle(IPC.shellOpenExternal, (_event, url: unknown) => {

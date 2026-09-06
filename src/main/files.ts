@@ -1,6 +1,8 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
-import { assertReadable, assertReadableDir, assertWritable } from './paths.ts'
+import path from 'node:path'
+import { assertReadable, assertReadableDir, assertWritable, grantFile } from './paths.ts'
+import { MARKDOWN_EXTENSIONS } from '../shared/markdown.ts'
 import type { ReadFileResult, StatResult, WriteFileResult, WriteFileOptions } from '../shared/api.ts'
 
 interface KnownState {
@@ -76,6 +78,41 @@ export async function writeTextFile(
   rememberState(filePath, content, stats.mtimeMs)
   suppressUntil.set(filePath, Date.now() + 500)
   return { ok: true, mtimeMs: stats.mtimeMs }
+}
+
+/**
+ * Renames within the same directory only. `name` is a basename, so a value
+ * containing separators or `..` cannot walk out of the folder, and the result
+ * still has to pass the write rules (markdown extension, granted path).
+ */
+export async function renameFile(input: unknown, name: unknown): Promise<string> {
+  const from = await assertWritable(input)
+  if (typeof name !== 'string' || name.trim() === '') {
+    throw new TypeError('name must be a non-empty string')
+  }
+  const base = path.basename(name.trim())
+  if (base !== name.trim() || base === '.' || base === '..') {
+    throw new Error('EINVAL: name must be a file name, not a path')
+  }
+  const withExt = MARKDOWN_EXTENSIONS.some((ext) => base.toLowerCase().endsWith(ext))
+    ? base
+    : `${base}.md`
+  const to = path.join(path.dirname(from), withExt)
+  if (to === from) return from
+
+  // Never silently clobber an existing file.
+  try {
+    await fs.access(to)
+    throw new Error(`EEXIST: "${withExt}" already exists`)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+
+  // Grant the destination before the rename so the caller can read it back.
+  grantFile(to)
+  await assertWritable(to)
+  await fs.rename(from, to)
+  return to
 }
 
 export async function statPath(input: unknown): Promise<StatResult | null> {

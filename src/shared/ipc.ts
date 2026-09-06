@@ -14,6 +14,7 @@ export const IPC = {
   fsReadFile: 'fs:readFile',
   fsWriteFile: 'fs:writeFile',
   fsStat: 'fs:stat',
+  fsRename: 'fs:rename',
   folderList: 'folder:list',
   folderWatch: 'folder:watch',
   folderUnwatch: 'folder:unwatch',
@@ -32,6 +33,7 @@ export const IPC = {
   windowSetDocument: 'window:setDocument',
   appRendererReady: 'app:rendererReady',
   appGrantDroppedPath: 'app:grantDroppedPath',
+  menuFileContext: 'menu:fileContext',
   shellOpenExternal: 'shell:openExternal',
   shellShowItemInFolder: 'shell:showItemInFolder',
 

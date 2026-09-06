@@ -31,6 +31,7 @@ const api: MarkdownApi = {
     writeFile: (filePath, content, opts) =>
       ipcRenderer.invoke(IPC.fsWriteFile, filePath, content, opts ?? {}),
     stat: (filePath) => ipcRenderer.invoke(IPC.fsStat, filePath),
+    rename: (filePath, name) => ipcRenderer.invoke(IPC.fsRename, filePath, name),
   },
   folder: {
     list: (root) => ipcRenderer.invoke(IPC.folderList, root),
@@ -61,6 +62,9 @@ const api: MarkdownApi = {
   app: {
     rendererReady: () => ipcRenderer.invoke(IPC.appRendererReady),
     grantDroppedPath: (filePath) => ipcRenderer.invoke(IPC.appGrantDroppedPath, filePath),
+  },
+  menu: {
+    fileContext: (target) => ipcRenderer.invoke(IPC.menuFileContext, target),
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke(IPC.shellOpenExternal, url),

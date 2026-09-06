@@ -79,6 +79,15 @@ export interface RendererReadyResult {
   isPackaged: boolean
 }
 
+/** What the file context menu did, so the renderer can react. */
+export type FileContextResult =
+  | { action: 'cancelled' }
+  | { action: 'revealed' }
+  | { action: 'copiedPath' }
+  /** Main does not rename; the sidebar edits the name in place. */
+  | { action: 'rename'; path: string }
+  | { action: 'trashed'; path: string }
+
 export interface DocumentInfo {
   filePath: string | null
   edited: boolean
@@ -103,6 +112,11 @@ export interface MarkdownApi {
     writeFile(path: string, content: string, opts?: WriteFileOptions): Promise<WriteFileResult>
     /** Null when the path does not exist. Requires a granted path. */
     stat(path: string): Promise<StatResult | null>
+    /**
+     * Renames within the same directory. `name` is a basename, not a path;
+     * a markdown extension is enforced. Resolves the new absolute path.
+     */
+    rename(path: string, name: string): Promise<string>
   }
 
   folder: {
@@ -147,6 +161,14 @@ export interface MarkdownApi {
     rendererReady(): Promise<RendererReadyResult>
     /** Validates and grants a dropped path. Rejects non-markdown files. */
     grantDroppedPath(path: string): Promise<OpenPathEvent>
+  }
+
+  menu: {
+    /**
+     * Pops a native context menu for one sidebar row and performs the chosen
+     * action in main. Resolves once the menu closes.
+     */
+    fileContext(target: { path: string; kind: PathKind }): Promise<FileContextResult>
   }
 
   shell: {

@@ -262,3 +262,19 @@ body.is-fullscreen .main-pane {
   background: var(--border);
   color: var(--bg);
 }
+
+.tree-rename {
+  cursor: default;
+}
+
+.tree-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 2px solid var(--accent);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 1px 4px;
+  outline: none;
+}
