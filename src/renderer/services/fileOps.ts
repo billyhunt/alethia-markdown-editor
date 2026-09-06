@@ -25,6 +25,14 @@ async function adoptFile(filePath: string): Promise<void> {
   await api.recents.add(filePath)
   await api.document.watch(filePath)
   useWorkspaceStore.getState().setNotice(null)
+
+  // With no workspace yet, take the file's own folder. Otherwise opening a
+  // note from Finder lands on a sidebar telling you to open a folder, which
+  // reads as the app refusing to work until you do something.
+  if (!useWorkspaceStore.getState().folderRoot) {
+    const parent = filePath.slice(0, filePath.lastIndexOf('/'))
+    if (parent) await adoptFolder(parent).catch(() => undefined)
+  }
 }
 
 export async function newDocument(): Promise<void> {

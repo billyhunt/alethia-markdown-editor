@@ -44,6 +44,9 @@ export function useHostEvents(): void {
       // A path handed to us by Finder or argv wins over restoring last session.
       const pending = ready.pendingPaths
       if (pending.length > 0) {
+        // Restore the previous workspace first, so a file opened from Finder
+        // still arrives with a populated sidebar rather than an empty one.
+        if (ready.settings.lastFolder) await adoptFolder(ready.settings.lastFolder)
         for (const entry of pending) {
           if (entry.kind === 'dir') await adoptFolder(entry.path)
           else await openPath(entry.path)

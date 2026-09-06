@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import path from 'node:path'
 import { app } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { grantFile, grantRoot, validatePath } from './paths.ts'
@@ -17,8 +18,15 @@ async function classify(target: string): Promise<OpenPathEvent | null> {
   try {
     const stats = await fs.stat(target)
     if (stats.isDirectory()) return { path: grantRoot(target), kind: 'dir' }
-    if (isReadablePath(target)) return { path: grantFile(target), kind: 'file' }
-    return null
+    if (!isReadablePath(target)) return null
+
+    // Opening a file from Finder also grants its containing folder, so the
+    // sidebar can list its siblings. Double-clicking a note and being told to
+    // go and open a folder is not a useful place to land. The user picked
+    // this file, so its own directory is the narrowest workspace that makes
+    // the window usable.
+    grantRoot(path.dirname(target))
+    return { path: grantFile(target), kind: 'file' }
   } catch {
     return null
   }
