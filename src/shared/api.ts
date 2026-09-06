@@ -26,10 +26,15 @@ export interface FolderTree {
   truncated: boolean
 }
 
+/** Line endings are preserved per file rather than normalised on save. */
+export type LineEnding = '\n' | '\r\n'
+
 export interface ReadFileResult {
   path: string
-  /** UTF-8, BOM stripped, line endings untouched. */
+  /** UTF-8, BOM stripped, normalised to LF for the editor. */
   content: string
+  /** What the file actually used, so a save can restore it. */
+  lineEnding: LineEnding
   mtimeMs: number
 }
 
@@ -38,6 +43,8 @@ export interface WriteFileOptions {
   expectedMtimeMs?: number | null
   /** Write even though the file changed on disk since it was loaded. */
   force?: boolean
+  /** Restored on write; defaults to LF for a document with no origin. */
+  lineEnding?: LineEnding
 }
 
 export type WriteFileResult =

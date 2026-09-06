@@ -3,7 +3,28 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { assertReadable, assertReadableDir, assertWritable, grantFile } from './paths.ts'
 import { MARKDOWN_EXTENSIONS } from '../shared/markdown.ts'
-import type { ReadFileResult, StatResult, WriteFileResult, WriteFileOptions } from '../shared/api.ts'
+import type {
+  LineEnding,
+  ReadFileResult,
+  StatResult,
+  WriteFileResult,
+  WriteFileOptions,
+} from '../shared/api.ts'
+
+/**
+ * Which ending a file predominantly uses. CodeMirror works in LF only, so a
+ * CRLF file would otherwise be silently rewritten on the first save -- a
+ * whole-file diff for anyone on Windows or in a mixed repository.
+ */
+function detectLineEnding(raw: string): LineEnding {
+  const crlf = (raw.match(/\r\n/g) ?? []).length
+  const lf = (raw.match(/\n/g) ?? []).length - crlf
+  return crlf > lf ? '\r\n' : '\n'
+}
+
+const toLf = (text: string): string => text.replace(/\r\n/g, '\n')
+const fromLf = (text: string, ending: LineEnding): string =>
+  ending === '\r\n' ? text.replace(/\n/g, '\r\n') : text
 
 interface KnownState {
   mtimeMs: number
@@ -36,10 +57,17 @@ export async function readTextFile(input: unknown): Promise<ReadFileResult> {
   const filePath = await assertReadable(input)
   const raw = await fs.readFile(filePath, 'utf8')
   // Strip a UTF-8 BOM; it would otherwise show up as a stray glyph.
-  const content = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw
+  const onDisk = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw
   const stats = await fs.stat(filePath)
-  rememberState(filePath, content, stats.mtimeMs)
-  return { path: filePath, content, mtimeMs: stats.mtimeMs }
+  // The watcher compares against what is actually on disk, so hash that
+  // rather than the LF-normalised copy handed to the editor.
+  rememberState(filePath, onDisk, stats.mtimeMs)
+  return {
+    path: filePath,
+    content: toLf(onDisk),
+    lineEnding: detectLineEnding(onDisk),
+    mtimeMs: stats.mtimeMs,
+  }
 }
 
 export async function writeTextFile(
@@ -70,12 +98,15 @@ export async function writeTextFile(
     }
   }
 
+  // Restore whatever endings the file arrived with.
+  const onDisk = fromLf(content, opts.lineEnding ?? '\n')
+
   // Written in place rather than temp-and-rename: rename would replace
   // symlinks, drop Finder tags and xattrs, and change the inode, which
   // confuses other editors watching the same file.
-  await fs.writeFile(filePath, content, 'utf8')
+  await fs.writeFile(filePath, onDisk, 'utf8')
   const stats = await fs.stat(filePath)
-  rememberState(filePath, content, stats.mtimeMs)
+  rememberState(filePath, onDisk, stats.mtimeMs)
   suppressUntil.set(filePath, Date.now() + 500)
   return { ok: true, mtimeMs: stats.mtimeMs }
 }

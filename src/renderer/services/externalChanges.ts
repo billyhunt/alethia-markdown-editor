@@ -24,9 +24,9 @@ export async function handleFileChange(event: FileChangeEvent): Promise<void> {
   }
 
   if (!doc.dirty) {
-    const { content, mtimeMs } = await api.fs.readFile(event.path)
+    const { content, mtimeMs, lineEnding } = await api.fs.readFile(event.path)
     editorController.setDocument(content)
-    doc.load({ filePath: event.path, text: content, mtimeMs })
+    doc.load({ filePath: event.path, text: content, mtimeMs, lineEnding })
     workspace.setNotice({
       message: 'Reloaded from disk.',
       actions: [{ label: 'Dismiss', run: () => workspace.setNotice(null) }],
@@ -44,9 +44,11 @@ export async function handleFileChange(event: FileChangeEvent): Promise<void> {
       {
         label: 'Reload (discard my changes)',
         run: () => {
-          void api.fs.readFile(event.path).then(({ content, mtimeMs }) => {
+          void api.fs.readFile(event.path).then(({ content, mtimeMs, lineEnding }) => {
             editorController.setDocument(content)
-            useDocumentStore.getState().load({ filePath: event.path, text: content, mtimeMs })
+            useDocumentStore
+              .getState()
+              .load({ filePath: event.path, text: content, mtimeMs, lineEnding })
             useWorkspaceStore.getState().setNotice(null)
           })
         },

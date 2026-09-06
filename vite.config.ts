@@ -30,7 +30,9 @@ export default defineConfig({
         entry: { main: 'src/main/index.ts' },
         // Drop the plugin's default `--no-sandbox` so dev matches production.
         onstart: ({ startup }) => {
-          void startup(['.'])
+          // Remote debugging in dev only, so the renderer can be driven and
+          // inspected from outside the app.
+          void startup(['.', '--remote-debugging-port=9222'])
         },
         vite: { build: { outDir: 'dist-electron', sourcemap: true } },
       },

@@ -19,9 +19,9 @@ export async function ensureClosable(): Promise<boolean> {
 }
 
 async function adoptFile(filePath: string): Promise<void> {
-  const { content, mtimeMs } = await api.fs.readFile(filePath)
+  const { content, mtimeMs, lineEnding } = await api.fs.readFile(filePath)
   editorController.setDocument(content)
-  useDocumentStore.getState().load({ filePath, text: content, mtimeMs })
+  useDocumentStore.getState().load({ filePath, text: content, mtimeMs, lineEnding })
   await api.recents.add(filePath)
   await api.document.watch(filePath)
   useWorkspaceStore.getState().setNotice(null)
@@ -84,8 +84,9 @@ export async function saveAs(): Promise<boolean> {
 
 async function writeTo(filePath: string, expectedMtimeMs: number | null): Promise<boolean> {
   const text = editorController.getText()
+  const { lineEnding } = useDocumentStore.getState()
   try {
-    const result = await api.fs.writeFile(filePath, text, { expectedMtimeMs })
+    const result = await api.fs.writeFile(filePath, text, { expectedMtimeMs, lineEnding })
     if (!result.ok) {
       showConflictNotice(filePath, text)
       return false
@@ -107,7 +108,8 @@ function showConflictNotice(filePath: string, text: string): void {
       {
         label: 'Overwrite',
         run: () => {
-          void api.fs.writeFile(filePath, text, { force: true }).then((result) => {
+          const ending = useDocumentStore.getState().lineEnding
+          void api.fs.writeFile(filePath, text, { force: true, lineEnding: ending }).then((result) => {
             if (result.ok) {
               useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs })
             }
