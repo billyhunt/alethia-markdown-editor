@@ -8,6 +8,11 @@ files:
   - dist/**
   - dist-electron/**
   - package.json
+  # The bundled fonts are OFL, which requires the licence to travel with
+  # every redistributed copy -- including inside the .app.
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
+  - licenses/**
 asar: true
 mac:
   category: public.app-category.productivity
