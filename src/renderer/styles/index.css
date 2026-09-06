@@ -32,14 +32,17 @@
   --rule: 3px;
 
   /* Code tokens sit on the black well, so they are the light-on-dark set. */
-  --code-keyword: #ff8a5c;
-  --code-string: #b8e986;
-  --code-comment: #8a8780;
-  --code-number: #ffb37a;
+  /* One spot colour, like the print it is named after: the hot orange, one
+     lighter step of the SAME hue, paper, and grey. No second hue. */
+  --code-keyword: #ff3b00;
+  --code-number: #ff3b00;
+  --code-property: #ff3b00;
+  --code-type: #ff9166;
+  /* Strings are content rather than syntax, so they read as dimmed paper. */
+  --code-string: #d8cfc0;
   --code-function: #f2f0eb;
-  --code-type: #ffb37a;
+  --code-comment: #8a8780;
   --code-operator: #8a8780;
-  --code-property: #ff8a5c;
 
   --titlebar-h: 38px;
 
