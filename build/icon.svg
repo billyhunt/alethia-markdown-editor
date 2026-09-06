@@ -1,13 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
-  <title id="title">Markdown Reader app icon</title>
-  <desc id="desc">A black markdown hash with an orange editing caret on warm paper.</desc>
-  <!-- Zine paper, ink, and the single spot colour used by the application. -->
-  <rect width="1024" height="1024" rx="224" fill="#f2f0eb"/>
-  <rect x="34" y="34" width="956" height="956" rx="194" fill="none" stroke="#111111" stroke-width="44"/>
-
-  <!-- A deliberately heavy # stays legible down to Dock and document-icon sizes. -->
-  <path d="M355 244 298 780M570 244 513 780M218 426h522M184 620h522" fill="none" stroke="#111111" stroke-linecap="square" stroke-width="88"/>
-
-  <!-- The single orange stroke is the live editing cursor. -->
-  <rect x="705" y="649" width="76" height="180" fill="#ff3b00"/>
+  <title id="title">Alethia app icon</title>
+  <desc id="desc">A black Greek alpha in an orange table cell.</desc>
+  <!-- The accent used in the editor's active table cell becomes the whole tile. -->
+  <rect width="1024" height="1024" rx="224" fill="#ff3b00"/>
+  <rect x="34" y="34" width="956" height="956" rx="190" fill="none" stroke="#111111" stroke-width="36"/>
+  <!-- Math-style alpha: direct, legible, and Greek without a decorative motif. -->
+  <text x="484" y="710" fill="#111111" stroke="#111111" stroke-width="20" stroke-linejoin="round" paint-order="stroke fill" font-family="Times New Roman, Times, serif" font-size="900" font-style="italic" text-anchor="middle">α</text>
 </svg>
