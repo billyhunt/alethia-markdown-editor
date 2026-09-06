@@ -1,5 +1,5 @@
-appId: com.billyhunt.markdown-reader
-productName: Markdown Reader
+appId: com.billyhunt.alethia
+productName: Alethia
 directories:
   buildResources: build
   output: release

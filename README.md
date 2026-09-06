@@ -1,4 +1,4 @@
-# Markdown Reader
+# Alethia
 
 A Typora-style markdown editor for macOS: a single editing surface where
 markdown renders in place, and the raw syntax reappears only around whatever
@@ -22,7 +22,7 @@ npm run dist      # .dmg (requires a Developer ID certificate)
 ```
 
 `npm run package` produces an unsigned build for local use. macOS may refuse to
-open it on first launch; `codesign --force --deep --sign - "release/mac-arm64/Markdown Reader.app"`
+open it on first launch; `codesign --force --deep --sign - "release/mac-arm64/Alethia.app"`
 clears that. Signing and notarization are configured but off — see the comment
 in `electron-builder.yml`.
 

@@ -122,8 +122,8 @@ export function registerIpcHandlers(): void {
     win.setDocumentEdited(edited === true)
     win.setTitle(
       typeof filePath === 'string' && filePath
-        ? (filePath.split('/').pop() ?? 'Markdown Reader')
-        : 'Markdown Reader',
+        ? (filePath.split('/').pop() ?? 'Alethia')
+        : 'Alethia',
     )
   })
 

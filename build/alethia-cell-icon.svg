@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Alethia alpha table-cell app icon candidate</title>
+  <desc id="desc">A black Greek alpha in an orange table cell.</desc>
+  <!-- The accent used in the editor's active table cell becomes the whole tile. -->
+  <rect width="1024" height="1024" rx="224" fill="#ff3b00"/>
+  <rect x="34" y="34" width="956" height="956" rx="190" fill="none" stroke="#111111" stroke-width="36"/>
+  <!-- Math-style alpha: direct, legible, and Greek without a decorative motif. -->
+  <text x="484" y="710" fill="#111111" stroke="#111111" stroke-width="20" stroke-linejoin="round" paint-order="stroke fill" font-family="Times New Roman, Times, serif" font-size="900" font-style="italic" text-anchor="middle">α</text>
+</svg>

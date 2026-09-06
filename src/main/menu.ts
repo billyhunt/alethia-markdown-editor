@@ -167,7 +167,7 @@ export function buildApplicationMenu(): void {
       role: 'help',
       submenu: [
         {
-          label: 'Markdown Reader on GitHub',
+          label: 'Alethia on GitHub',
           click: () => {
             void shell.openExternal(REPO_URL)
           },

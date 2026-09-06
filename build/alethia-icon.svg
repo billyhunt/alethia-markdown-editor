@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Alethia app icon candidate</title>
+  <desc id="desc">A bold A cut from warm paper, with an orange editing cursor exposing its edge.</desc>
+  <!-- An inky app tile framing the paper surface of the editor. -->
+  <rect width="1024" height="1024" rx="224" fill="#111111"/>
+  <rect x="58" y="58" width="908" height="908" rx="178" fill="#f2f0eb"/>
+
+  <!-- The A is a physical cut-out: its open counter is the "unconcealed" page. -->
+  <path fill="#111111" fill-rule="evenodd" d="M194 792 418 222h188l224 570H668l-39-107H395l-39 107H194Zm318-426-76 207h152l-76-207Z"/>
+
+  <!-- The live caret breaks the right stroke: a small, vivid act of revelation. -->
+  <path fill="#ff3b00" d="M652 444h76v282h-76z"/>
+</svg>

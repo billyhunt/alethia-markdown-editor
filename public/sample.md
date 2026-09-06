@@ -1,4 +1,4 @@
-# Welcome to Markdown Reader
+# Welcome to Alethia
 
 The markdown source is always here. Rendering is a skin the caret peels back --
 click into anything below and its raw syntax reappears around just that node.

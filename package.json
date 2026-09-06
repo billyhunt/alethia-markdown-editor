@@ -1,6 +1,6 @@
 {
-  "name": "markdown-reader",
-  "productName": "Markdown Reader",
+  "name": "alethia",
+  "productName": "Alethia",
   "description": "A Typora-style markdown editor",
   "author": "Billy Hunt",
   "private": true,
