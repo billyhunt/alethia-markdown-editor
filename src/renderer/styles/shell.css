@@ -22,6 +22,9 @@
   gap: 0.5rem;
   /* Clears the traffic lights, which macOS draws over our chrome. */
   padding-left: 84px;
+  padding-right: 0.75rem;
+  background: var(--border);
+  color: var(--bg);
   -webkit-app-region: drag;
   -webkit-user-select: none;
   z-index: 5;
@@ -39,36 +42,38 @@ body.is-fullscreen .titlebar {
 }
 
 .titlebar-name {
-  font-size: 0.8rem;
-  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bg);
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
+/* Unsaved work reads as a hot square, not a soft dot. */
 .dirty-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-muted);
+  width: 7px;
+  height: 7px;
+  background: var(--accent-hot);
 }
 
 .icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border: none;
-  border-radius: 6px;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--bg);
   cursor: pointer;
 }
 
 .icon-button:hover {
-  background: var(--code-bg);
-  color: var(--text);
+  background: var(--accent-hot);
+  color: #111111;
 }
 
 /* --- sidebar ------------------------------------------------------------ */
@@ -78,7 +83,7 @@ body.is-fullscreen .titlebar {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border-right: 1px solid var(--border);
+  border-right: var(--rule) solid var(--border);
   padding-top: var(--titlebar-h);
   overflow: hidden;
 }
@@ -90,56 +95,59 @@ body.is-fullscreen .main-pane {
 
 .sidebar-tabs {
   display: flex;
-  gap: 0.25rem;
-  padding: 0.5rem 0.5rem 0.25rem;
+  gap: 0;
+  border-bottom: var(--rule) solid var(--border);
 }
 
 .sidebar-tabs button {
   flex: 1;
   border: none;
   background: transparent;
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  padding: 0.35rem;
-  border-radius: 5px;
+  padding: 0.55rem 0;
   cursor: pointer;
 }
 
 .sidebar-tabs button.is-active {
-  background: var(--code-bg);
-  color: var(--text);
+  background: var(--border);
+  color: var(--bg);
 }
 
 .sidebar-body {
   flex: 1 1 auto;
   overflow: auto;
-  padding-bottom: 1rem;
+  padding: 0.25rem 0 1rem;
 }
 
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   width: 100%;
-  padding: 0.25rem 0.5rem;
+  padding: 0.3rem 0.6rem;
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 0.82rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
   text-align: left;
   cursor: pointer;
 }
 
 .tree-row:hover {
-  background: var(--code-bg);
+  background: var(--selection);
 }
 
 .tree-row.is-current {
-  background: var(--code-bg);
-  font-weight: 600;
+  background: var(--accent);
+  color: #f2f0eb;
+  font-weight: 500;
 }
 
 .tree-label {
@@ -153,27 +161,33 @@ body.is-fullscreen .main-pane {
 }
 
 .outline-row {
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 .sidebar-empty {
   padding: 1rem 0.75rem;
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
 }
 
 .button {
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   background: transparent;
   color: var(--text);
-  border-radius: 6px;
-  padding: 0.35rem 0.7rem;
-  font-size: 0.78rem;
+  border-radius: 0;
+  padding: 0.4rem 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
 .button:hover {
-  background: var(--code-bg);
+  background: var(--border);
+  color: var(--bg);
 }
 
 /* --- main pane ---------------------------------------------------------- */
@@ -199,9 +213,22 @@ body.is-fullscreen .main-pane {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.5rem 1rem;
-  background: var(--code-bg);
-  border-bottom: 1px solid var(--border);
-  font-size: 0.8rem;
+  background: var(--accent-hot);
+  color: #111111;
+  border-bottom: var(--rule) solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
+.banner .button {
+  border-color: #111111;
+  color: #111111;
+}
+
+.banner .button:hover {
+  background: #111111;
+  color: var(--accent-hot);
 }
 
 .banner-actions {
@@ -214,20 +241,24 @@ body.is-fullscreen .main-pane {
   flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
-  padding: 0.3rem 1rem;
-  border-top: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 0.72rem;
+  padding: 0.4rem 1rem;
+  border-top: var(--rule) solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .statusbar-right {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
+  color: var(--accent);
 }
 
 .statusbar-badge {
-  padding: 0.05rem 0.35rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  background: var(--border);
+  color: var(--bg);
 }

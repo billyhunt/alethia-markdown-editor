@@ -1,53 +1,72 @@
 /*
- * Theme variables. The main process owns the theme preference and sets
- * nativeTheme.themeSource, which drives prefers-color-scheme here -- so the
- * renderer needs no IPC to know the effective theme.
+ * Zine: brutalist. Paper ground, hard black rules, one hot orange.
+ *
+ * The main process owns the theme preference and sets nativeTheme.themeSource,
+ * which drives prefers-color-scheme here -- so the renderer needs no IPC to
+ * know the effective theme.
+ *
+ * Fonts are bundled rather than fetched: this is a desktop app that must work
+ * offline, and the renderer's CSP allows no network egress.
  */
-:root {
-  --bg: #ffffff;
-  --text: #1a1a1a;
-  --text-muted: #6b6b6b;
-  --border: #e3e3e3;
-  --accent: #3d7eff;
-  --selection: #cfe3ff;
-  --code-bg: #f2f0eb;
+@import '@fontsource/archivo/400.css';
+@import '@fontsource/archivo/600.css';
+@import '@fontsource/archivo-black/400.css';
+@import '@fontsource/dm-mono/400.css';
+@import '@fontsource/dm-mono/500.css';
 
-  --code-keyword: #a626a4;
-  --code-string: #50a14f;
-  --code-comment: #a0a1a7;
-  --code-number: #c18401;
-  --code-function: #4078f2;
-  --code-type: #c18401;
-  --code-operator: #6b6b6b;
-  --code-property: #e45649;
-  --code-meta: #986801;
+:root {
+  --bg: #f2f0eb;
+  --text: #111111;
+  --text-muted: #5f5c55;
+  --border: #111111;
+  /* Two accents: the hot one is only ever used on black, where it clears AA
+     at 5.3:1. On paper it drops to 3.1:1, so ink is the darker variant. */
+  --accent: #b52900;
+  --accent-hot: #ff3b00;
+  --accent-ink: #111111;
+  --selection: #f5e0d6;
+  --code-bg: #111111;
+  --code-fg: #f2f0eb;
+  --panel: #f2f0eb;
+  --panel-fg: #111111;
+  --rule: 3px;
+
+  /* Code tokens sit on the black well, so they are the light-on-dark set. */
+  --code-keyword: #ff8a5c;
+  --code-string: #b8e986;
+  --code-comment: #8a8780;
+  --code-number: #ffb37a;
+  --code-function: #f2f0eb;
+  --code-type: #ffb37a;
+  --code-operator: #8a8780;
+  --code-property: #ff8a5c;
+
   --titlebar-h: 38px;
 
-  --font-prose: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  --font-prose: 'Archivo', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: 'Archivo Black', 'Archivo', Impact, system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
 
   color-scheme: light dark;
 }
 
+/* Dark mode inverts the paper rather than softening it -- the direction is
+   high-contrast either way. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1e1e1e;
-    --text: #d4d4d4;
-    --text-muted: #8a8a8a;
-    --border: #333333;
-    --accent: #6aa0ff;
-    --selection: #2f4a70;
-    --code-bg: #262626;
-
-    --code-keyword: #c678dd;
-    --code-string: #98c379;
-    --code-comment: #6a6a6a;
-    --code-number: #d19a66;
-    --code-function: #61afef;
-    --code-type: #e5c07b;
-    --code-operator: #8a8a8a;
-    --code-property: #e06c75;
-    --code-meta: #d19a66;
+    --bg: #111111;
+    --text: #f2f0eb;
+    --text-muted: #a3a099;
+    --border: #f2f0eb;
+    /* On the dark ground the hot orange is the readable one. */
+    --accent: #ff5722;
+    --accent-hot: #ff3b00;
+    --accent-ink: #f2f0eb;
+    --selection: #4a2418;
+    --code-bg: #000000;
+    --code-fg: #f2f0eb;
+    --panel: #000000;
+    --panel-fg: #f2f0eb;
   }
 }
 
@@ -67,4 +86,8 @@ body {
   color: var(--text);
   font-family: var(--font-prose);
   -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--selection);
 }

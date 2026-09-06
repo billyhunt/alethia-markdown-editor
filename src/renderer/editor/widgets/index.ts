@@ -19,7 +19,8 @@ export class BulletWidget extends WidgetType {
   toDOM(): HTMLElement {
     const span = document.createElement('span')
     span.className = 'cm-md-bullet'
-    span.textContent = this.depth % 2 === 1 ? '◦' : '•'
+    // Square marks rather than round: the direction has no soft edges.
+    span.textContent = this.depth % 2 === 1 ? '▫' : '▪'
     return span
   }
 }

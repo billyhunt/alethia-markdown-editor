@@ -59,7 +59,7 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 12 },
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#ffffff',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#111111' : '#f2f0eb',
     webPreferences: {
       preload: path.join(import.meta.dirname, 'preload.cjs'),
       contextIsolation: true,
