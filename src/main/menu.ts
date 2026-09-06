@@ -1,5 +1,5 @@
 import { app, Menu, shell, type MenuItemConstructorOptions, type BrowserWindow } from 'electron'
-import { sendCommand } from './commands.ts'
+import { sendCommand, focusedWindow } from './commands.ts'
 import { createMainWindow } from './window.ts'
 import { applyTheme } from './theme.ts'
 import { getSettings, patchSettings } from './settings.ts'
@@ -28,8 +28,11 @@ const cmd = (
  * create one; anything else has nowhere meaningful to go.
  */
 function dispatch(win: BrowserWindow | undefined, command: HostCommand): void {
-  if (win) {
-    sendCommand(win, command)
+  // Electron passes no window when the app is not frontmost, so fall back to
+  // any open one rather than dropping the command on the floor.
+  const target = win ?? focusedWindow()
+  if (target) {
+    sendCommand(target, command)
     return
   }
   if (command === 'file:new' || command === 'file:open' || command === 'file:openFolder') {

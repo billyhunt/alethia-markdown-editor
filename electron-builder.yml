@@ -3,6 +3,7 @@ productName: Markdown Reader
 directories:
   buildResources: build
   output: release
+icon: build/icon.icns
 files:
   - dist/**
   - dist-electron/**
