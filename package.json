@@ -1,7 +1,7 @@
 {
   "name": "alethia",
   "productName": "Alethia",
-  "description": "A Typora-style markdown editor",
+  "description": "A markdown editor for macOS that renders in place as you write",
   "author": "Billy Hunt",
   "private": true,
   "version": "0.1.0-alpha.1",

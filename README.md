@@ -1,8 +1,25 @@
 # Alethia
 
-A Typora-style markdown editor for macOS: a single editing surface where
-markdown renders in place, and the raw syntax reappears only around whatever
-the caret is touching. No split pane, no preview toggle.
+A markdown editor for macOS with one editing surface. Your markdown renders in
+place as you write, and the raw syntax reappears only around whatever the caret
+is touching — no split pane, no preview toggle, no mode to switch.
+
+The name is ἀλήθεια: disclosure, the state of not being hidden. The source is
+never converted or hidden away; it is simply covered, and uncovers itself where
+you are working.
+
+![The editor with the file tree, format bar and a document showing headings, a
+quote, task list, table and highlighted code](docs/screenshots/editor-light.png)
+
+Every save keeps the version it replaced, browsable per file:
+
+![The History panel listing earlier versions of the open file with relative
+timestamps and sizes](docs/screenshots/history.png)
+
+It follows the system appearance:
+
+![The same document in dark mode, with the chrome inverted to cream on
+black](docs/screenshots/editor-dark.png)
 
 ## Running it
 
@@ -62,10 +79,14 @@ links, bare URLs, horizontal rules, blockquotes, nested bullet and ordered
 lists, task checkboxes, fenced code with per-language highlighting, GFM tables,
 `$…$` and `$$…$$` math via KaTeX, and YAML front matter.
 
-Around it: open/save/save-as with dirty tracking, a folder sidebar and heading
-outline, live word and character counts, recent files, session restore,
-external-change detection, focus and typewriter modes, and a native menu whose
+Around it: open/save/save-as with dirty tracking, autosave, per-file version
+history, a folder sidebar with rename/reveal/trash, a heading outline, live word
+and character counts, recent files, session restore, external-change detection,
+printing and PDF export, focus and typewriter modes, and a native menu whose
 accelerators drive the same commands.
+
+Files keep the line endings they arrived with, so opening and saving a CRLF
+document does not rewrite every line.
 
 ## Known limitations
 
@@ -75,7 +96,7 @@ accelerators drive the same commands.
 - **Block syntax reveals per line, not per node.** A heading shows its `#`
   whenever the caret is anywhere on that line.
 - **The caret shifts visually** when a node reveals its markers, because those
-  characters were always in the document. Typora behaves the same way.
+  characters were always in the document rather than being inserted.
 - **Raw HTML blocks are shown as source**, never rendered.
 - **Relative image paths are not resolved yet** — that needs a custom protocol
   handler, since the CSP blocks `file:` images.

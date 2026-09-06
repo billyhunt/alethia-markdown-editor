@@ -15,7 +15,7 @@ export const editorTheme = EditorView.theme({
     color: 'var(--text)',
   },
   '&.cm-focused': { outline: 'none' },
-  // The centered writing column -- the signature Typora layout.
+  // The centred writing column.
   '.cm-scroller': {
     justifyContent: 'center',
     overflow: 'auto',

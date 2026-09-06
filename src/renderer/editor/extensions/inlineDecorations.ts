@@ -295,8 +295,9 @@ export function buildDecorations(view: EditorView): Built {
             for (let n = firstLine; n <= lastLine; n += 1) {
               built.decorations.push(lineDeco('cm-md-quote').range(state.doc.line(n).from))
             }
-            // The `>` is never revealed -- Typora never shows it, and Enter
-            // and Backspace already maintain the quote via markdownKeymap.
+            // The `>` is never revealed: it is structure rather than text,
+            // and Enter and Backspace already maintain the quote via
+            // markdownKeymap.
             for (const mark of childrenNamed(node, 'QuoteMark')) {
               const line = state.doc.lineAt(mark.from)
               hideMarkerAndSpace(mark.from, mark.to, line.to)
@@ -312,8 +313,8 @@ export function buildDecorations(view: EditorView): Built {
               for (let p = node.parent; p; p = p.parent) if (p.name === 'ListItem') depth += 1
               // The mark's own ListItem parent is not a nesting level.
               depth = Math.max(0, depth - 1)
-              // Replaced even on the active line: typing "- " should become a
-              // bullet immediately, as it does in Typora.
+              // Replaced even on the active line, so typing "- " becomes a
+              // bullet immediately rather than after the caret leaves.
               replaceWith(
                 built,
                 node.from,

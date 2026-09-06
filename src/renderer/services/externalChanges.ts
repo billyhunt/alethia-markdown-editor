@@ -6,7 +6,7 @@ import type { FileChangeEvent } from '../../shared/api'
 
 /**
  * A file changed underneath us. When there is nothing to lose we reload
- * silently (Typora's behaviour); when there is, the choice belongs to the user.
+ * silently; when there is, the choice belongs to the user.
  */
 export async function handleFileChange(event: FileChangeEvent): Promise<void> {
   const doc = useDocumentStore.getState()

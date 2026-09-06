@@ -4,7 +4,7 @@ import { api } from '../../api.ts'
 
 /**
  * Cmd/Ctrl-click opens a rendered link externally. A plain click is left alone
- * so it places the caret and reveals the link's source, as Typora does.
+ * so it places the caret and reveals the link's source instead.
  *
  * The URL is opened through main, which refuses anything that is not http(s);
  * the renderer never navigates itself.
