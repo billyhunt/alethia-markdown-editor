@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { app, BrowserWindow, nativeImage } from 'electron'
-import { createMainWindow, getQuitting, setQuitting } from './window.ts'
+import { getQuitting, persistSessions, restoreWindows, setQuitting } from './windows.ts'
 import { registerIpcHandlers } from './ipc.ts'
 import { hardenSession } from './security.ts'
 import { buildApplicationMenu } from './menu.ts'
@@ -47,11 +47,11 @@ if (!app.requestSingleInstanceLock()) {
     registerIpcHandlers()
     buildApplicationMenu()
     await enqueueArgv(process.argv)
-    createMainWindow()
+    restoreWindows()
 
     // macOS: clicking the dock icon with no windows open reopens one.
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+      if (BrowserWindow.getAllWindows().length === 0) restoreWindows()
     })
   })
 
@@ -62,6 +62,12 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     flushSettings()
     void closeAllWatchers()
+  })
+
+  // Closing the last window is a layout worth remembering, but an empty list
+  // would wipe the session, so the final layout is captured before teardown.
+  app.on('before-quit', () => {
+    persistSessions()
   })
 
   app.on('window-all-closed', () => {

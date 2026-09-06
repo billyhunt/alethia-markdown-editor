@@ -5,7 +5,7 @@
  * runtime import of `electron` or of DOM globals.
  */
 import type { HostCommand } from './ipc'
-import type { Settings, SettingsPatch } from './settings'
+import type { Settings, SettingsPatch, WindowSession } from './settings'
 
 export type Unsubscribe = () => void
 export type PathKind = 'file' | 'dir'
@@ -80,6 +80,8 @@ export interface CloseRequestedEvent {
 export interface RendererReadyResult {
   /** Queued open-with paths from open-file / argv / second-instance. */
   pendingPaths: OpenPathEvent[]
+  /** What this particular window should restore. */
+  session: WindowSession
   settings: Settings
   platform: string
   version: string

@@ -1,34 +1,59 @@
 import fs from 'node:fs/promises'
 import chokidar, { type FSWatcher } from 'chokidar'
+import type { BrowserWindow } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { IGNORED_DIR_NAMES, isMarkdownPath } from '../shared/markdown.ts'
 import { getKnown, isSuppressed, rememberState } from './files.ts'
 import { listMarkdownTree } from './folder.ts'
-import { sendToRenderer, focusedWindow } from './commands.ts'
 import type { FileChangeEvent } from '../shared/api.ts'
 
 /**
  * chokidar rather than fs.watch: on macOS fs.watch reports duplicate and
  * rename-flavoured events for the temp-then-rename saves other editors do,
  * fires before the write finishes, and offers no debounce.
+ *
+ * Watchers belong to a window, not to the application. A single pair would
+ * mean a second window opening a file silently cancelled the first window's
+ * watch, and change events would arrive at whichever window happened to be
+ * focused rather than the one actually showing the file.
  */
-let docWatcher: FSWatcher | null = null
-let folderWatcher: FSWatcher | null = null
-let folderDebounce: NodeJS.Timeout | null = null
+interface WindowWatchers {
+  doc: FSWatcher | null
+  folder: FSWatcher | null
+  folderDebounce: NodeJS.Timeout | null
+}
 
-export async function watchDocument(filePath: string): Promise<void> {
-  await unwatchDocument()
-  docWatcher = chokidar.watch(filePath, {
+const perWindow = new Map<number, WindowWatchers>()
+
+const watchersFor = (id: number): WindowWatchers => {
+  let entry = perWindow.get(id)
+  if (!entry) {
+    entry = { doc: null, folder: null, folderDebounce: null }
+    perWindow.set(id, entry)
+  }
+  return entry
+}
+
+/** Events go to the window that asked for the watch, never the focused one. */
+const emit = (win: BrowserWindow, channel: string, payload: unknown): void => {
+  if (!win.isDestroyed()) win.webContents.send(channel, payload)
+}
+
+export async function watchDocument(win: BrowserWindow, filePath: string): Promise<void> {
+  const entry = watchersFor(win.id)
+  await entry.doc?.close()
+
+  entry.doc = chokidar.watch(filePath, {
     ignoreInitial: true,
     atomic: true,
     awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
   })
 
-  docWatcher.on('change', () => {
-    void handleDocChange(filePath)
+  entry.doc.on('change', () => {
+    void handleDocChange(win, filePath)
   })
-  docWatcher.on('unlink', () => {
-    emit({ path: filePath, kind: 'removed' })
+  entry.doc.on('unlink', () => {
+    emit(win, IPC.hostFileChanged, { path: filePath, kind: 'removed' } satisfies FileChangeEvent)
   })
 }
 
@@ -38,7 +63,7 @@ export async function watchDocument(filePath: string): Promise<void> {
  * a short suppression window after a write, an mtime+size comparison, and
  * finally a content hash.
  */
-async function handleDocChange(filePath: string): Promise<void> {
+async function handleDocChange(win: BrowserWindow, filePath: string): Promise<void> {
   if (isSuppressed(filePath)) return
 
   let stats
@@ -60,21 +85,25 @@ async function handleDocChange(filePath: string): Promise<void> {
     return
   }
 
-  emit({ path: filePath, kind: 'changed', mtimeMs: stats.mtimeMs })
+  emit(win, IPC.hostFileChanged, {
+    path: filePath,
+    kind: 'changed',
+    mtimeMs: stats.mtimeMs,
+  } satisfies FileChangeEvent)
 }
 
-const emit = (event: FileChangeEvent): void => {
-  sendToRenderer(focusedWindow(), IPC.hostFileChanged, event)
+export async function unwatchDocument(win: BrowserWindow): Promise<void> {
+  const entry = perWindow.get(win.id)
+  if (!entry) return
+  await entry.doc?.close()
+  entry.doc = null
 }
 
-export async function unwatchDocument(): Promise<void> {
-  await docWatcher?.close()
-  docWatcher = null
-}
+export async function watchFolder(win: BrowserWindow, root: string): Promise<void> {
+  const entry = watchersFor(win.id)
+  await closeFolder(entry)
 
-export async function watchFolder(root: string): Promise<void> {
-  await unwatchFolder()
-  folderWatcher = chokidar.watch(root, {
+  entry.folder = chokidar.watch(root, {
     ignoreInitial: true,
     depth: 12,
     // chokidar 4+ dropped glob support: `ignored` must be a function or RegExp.
@@ -86,29 +115,46 @@ export async function watchFolder(root: string): Promise<void> {
   })
 
   const refresh = (): void => {
-    if (folderDebounce) clearTimeout(folderDebounce)
-    folderDebounce = setTimeout(() => {
+    if (entry.folderDebounce) clearTimeout(entry.folderDebounce)
+    entry.folderDebounce = setTimeout(() => {
       void listMarkdownTree(root)
-        .then((tree) => sendToRenderer(focusedWindow(), IPC.hostFolderTree, tree))
+        .then((tree) => emit(win, IPC.hostFolderTree, tree))
         .catch(() => undefined)
     }, 300)
   }
 
-  folderWatcher.on('add', refresh)
-  folderWatcher.on('unlink', refresh)
-  folderWatcher.on('addDir', refresh)
-  folderWatcher.on('unlinkDir', refresh)
+  entry.folder.on('add', refresh)
+  entry.folder.on('unlink', refresh)
+  entry.folder.on('addDir', refresh)
+  entry.folder.on('unlinkDir', refresh)
 }
 
-export async function unwatchFolder(): Promise<void> {
-  if (folderDebounce) {
-    clearTimeout(folderDebounce)
-    folderDebounce = null
+async function closeFolder(entry: WindowWatchers): Promise<void> {
+  if (entry.folderDebounce) {
+    clearTimeout(entry.folderDebounce)
+    entry.folderDebounce = null
   }
-  await folderWatcher?.close()
-  folderWatcher = null
+  await entry.folder?.close()
+  entry.folder = null
+}
+
+export async function unwatchFolder(win: BrowserWindow): Promise<void> {
+  const entry = perWindow.get(win.id)
+  if (entry) await closeFolder(entry)
+}
+
+/** Called when a window closes; its watchers must not outlive it. */
+export async function closeWatchersFor(windowId: number): Promise<void> {
+  const entry = perWindow.get(windowId)
+  if (!entry) return
+  perWindow.delete(windowId)
+  await entry.doc?.close()
+  await closeFolder(entry)
 }
 
 export async function closeAllWatchers(): Promise<void> {
-  await Promise.all([unwatchDocument(), unwatchFolder()])
+  await Promise.all([...perWindow.keys()].map((id) => closeWatchersFor(id)))
 }
+
+/** How many windows currently hold watchers; used by the tests. */
+export const watchedWindowCount = (): number => perWindow.size

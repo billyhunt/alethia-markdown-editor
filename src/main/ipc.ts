@@ -12,10 +12,11 @@ import {
   showSaveAs,
 } from './dialogs.ts'
 import { getSettings, patchSettings } from './settings.ts'
+import { EMPTY_SESSION } from '../shared/settings.ts'
 import { addRecent, clearRecents, listRecents } from './recents.ts'
 import { grantFile, grantRoot, validatePath } from './paths.ts'
 import { takePendingPaths } from './openWith.ts'
-import { markForceClose, setQuitting } from './window.ts'
+import { markForceClose, noteDocument, noteFolder, setQuitting, takeSession } from './windows.ts'
 import { showFileContextMenu } from './fileMenu.ts'
 import { exportPdf } from './printing.ts'
 import { clearVersions, listVersions, readVersion } from './versions.ts'
@@ -70,20 +71,38 @@ export function registerIpcHandlers(): void {
 
   // --- folder --------------------------------------------------------------
   ipcMain.handle(IPC.folderList, (_event, root: unknown) => listMarkdownTree(root))
-  ipcMain.handle(IPC.folderWatch, async (_event, root: unknown) => {
+  ipcMain.handle(IPC.folderWatch, async (event, root: unknown) => {
+    const win = winOf(event)
     const target = validatePath(root)
-    patchSettings({ lastFolder: target })
-    await watchFolder(target)
+    if (win) {
+      noteFolder(win, target)
+      await watchFolder(win, target)
+    }
   })
-  ipcMain.handle(IPC.folderUnwatch, () => unwatchFolder())
+  ipcMain.handle(IPC.folderUnwatch, (event) => {
+    const win = winOf(event)
+    if (win) {
+      noteFolder(win, null)
+      return unwatchFolder(win)
+    }
+  })
 
   // --- document watch ------------------------------------------------------
-  ipcMain.handle(IPC.docWatch, async (_event, filePath: unknown) => {
+  ipcMain.handle(IPC.docWatch, async (event, filePath: unknown) => {
+    const win = winOf(event)
     const target = validatePath(filePath)
-    patchSettings({ lastFile: target })
-    await watchDocument(target)
+    if (win) {
+      noteDocument(win, target)
+      await watchDocument(win, target)
+    }
   })
-  ipcMain.handle(IPC.docUnwatch, () => unwatchDocument())
+  ipcMain.handle(IPC.docUnwatch, (event) => {
+    const win = winOf(event)
+    if (win) {
+      noteDocument(win, null)
+      return unwatchDocument(win)
+    }
+  })
 
   // --- recents -------------------------------------------------------------
   ipcMain.handle(IPC.recentsList, () => listRecents())
@@ -129,9 +148,13 @@ export function registerIpcHandlers(): void {
   })
 
   // --- app -----------------------------------------------------------------
-  ipcMain.handle(IPC.appRendererReady, (): RendererReadyResult => {
+  ipcMain.handle(IPC.appRendererReady, (event): RendererReadyResult => {
+    const win = winOf(event)
     return {
       pendingPaths: takePendingPaths(),
+      // Each window restores its own document and folder rather than a single
+      // application-wide "last file".
+      session: win ? takeSession(win) : { ...EMPTY_SESSION },
       settings: getSettings(),
       platform: process.platform,
       version: app.getVersion(),

@@ -1,6 +1,6 @@
 import { app, Menu, shell, type MenuItemConstructorOptions, type BrowserWindow } from 'electron'
 import { sendCommand, focusedWindow } from './commands.ts'
-import { createMainWindow } from './window.ts'
+import { createWindow } from './windows.ts'
 import { applyTheme } from './theme.ts'
 import { getSettings, patchSettings } from './settings.ts'
 import type { HostCommand } from '../shared/ipc.ts'
@@ -36,7 +36,7 @@ function dispatch(win: BrowserWindow | undefined, command: HostCommand): void {
     return
   }
   if (command === 'file:new' || command === 'file:open' || command === 'file:openFolder') {
-    const created = createMainWindow()
+    const created = createWindow()
     created.webContents.once('did-finish-load', () => sendCommand(created, command))
   }
 }
@@ -74,6 +74,13 @@ export function buildApplicationMenu(): void {
       label: 'File',
       submenu: [
         cmd('New', 'file:new', 'CmdOrCtrl+N'),
+        {
+          label: 'New Window',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => {
+            createWindow()
+          },
+        },
         cmd('Open…', 'file:open', 'CmdOrCtrl+O'),
         cmd('Open Folder…', 'file:openFolder', 'CmdOrCtrl+Shift+O'),
         // macOS populates this natively from app.addRecentDocument.

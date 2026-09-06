@@ -42,18 +42,21 @@ export function grantPersistedRecents(): void {
       /* skip malformed entries */
     }
   }
-  if (settings.lastFolder) {
-    try {
-      grantRoot(settings.lastFolder)
-    } catch {
-      /* ignore */
+  // Every window's saved folder and file, so each can restore itself.
+  for (const session of settings.windows) {
+    if (session.folder) {
+      try {
+        grantRoot(session.folder)
+      } catch {
+        /* ignore */
+      }
     }
-  }
-  if (settings.lastFile) {
-    try {
-      grantFile(settings.lastFile)
-    } catch {
-      /* ignore */
+    if (session.file) {
+      try {
+        grantFile(session.file)
+      } catch {
+        /* ignore */
+      }
     }
   }
 }

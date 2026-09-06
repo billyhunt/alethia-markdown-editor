@@ -2,21 +2,51 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { app } from 'electron'
-import { DEFAULT_SETTINGS, type Settings, type SettingsPatch } from '../shared/settings.ts'
+import {
+  DEFAULT_SETTINGS,
+  type Settings,
+  type SettingsPatch,
+  type WindowSession,
+} from '../shared/settings.ts'
 
 let cache: Settings = { ...DEFAULT_SETTINGS }
 let saveTimer: NodeJS.Timeout | null = null
 
 const settingsPath = (): string => path.join(app.getPath('userData'), 'settings.json')
 
+const asSession = (raw: unknown, fallbackBounds: Settings['windowBounds']): WindowSession => {
+  const input = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<WindowSession>
+  return {
+    bounds: { ...fallbackBounds, ...(input.bounds ?? {}) },
+    folder: typeof input.folder === 'string' ? input.folder : null,
+    file: typeof input.file === 'string' ? input.file : null,
+  }
+}
+
 /** Merges stored values over the defaults, dropping unknown keys. */
 function coerce(raw: unknown): Settings {
   if (typeof raw !== 'object' || raw === null) return { ...DEFAULT_SETTINGS }
-  const input = raw as Partial<Settings>
+  const input = raw as Partial<Settings> & { lastFile?: unknown; lastFolder?: unknown }
+  const windowBounds = { ...DEFAULT_SETTINGS.windowBounds, ...(input.windowBounds ?? {}) }
+
+  // Settings written before multi-window support held a single lastFile and
+  // lastFolder; carry them across as one window rather than dropping the
+  // user's session on upgrade.
+  const windows = Array.isArray(input.windows)
+    ? input.windows.slice(0, 20).map((entry) => asSession(entry, windowBounds))
+    : typeof input.lastFile === 'string' || typeof input.lastFolder === 'string'
+      ? [
+          {
+            bounds: windowBounds,
+            folder: typeof input.lastFolder === 'string' ? input.lastFolder : null,
+            file: typeof input.lastFile === 'string' ? input.lastFile : null,
+          },
+        ]
+      : []
+
   return {
-    windowBounds: { ...DEFAULT_SETTINGS.windowBounds, ...(input.windowBounds ?? {}) },
-    lastFolder: typeof input.lastFolder === 'string' ? input.lastFolder : null,
-    lastFile: typeof input.lastFile === 'string' ? input.lastFile : null,
+    windowBounds,
+    windows,
     theme:
       input.theme === 'light' || input.theme === 'dark' || input.theme === 'system'
         ? input.theme

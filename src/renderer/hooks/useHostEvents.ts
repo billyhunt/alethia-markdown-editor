@@ -42,11 +42,14 @@ export function useHostEvents(): void {
       workspace.setAutosave(ready.settings.autosave)
 
       // A path handed to us by Finder or argv wins over restoring last session.
+      // This window's own session, rather than one application-wide pair.
+      const { session } = ready
       const pending = ready.pendingPaths
+
       if (pending.length > 0) {
-        // Restore the previous workspace first, so a file opened from Finder
-        // still arrives with a populated sidebar rather than an empty one.
-        if (ready.settings.lastFolder) await adoptFolder(ready.settings.lastFolder)
+        // Restore the workspace first, so a file opened from Finder arrives
+        // with a populated sidebar rather than an empty one.
+        if (session.folder) await adoptFolder(session.folder)
         for (const entry of pending) {
           if (entry.kind === 'dir') await adoptFolder(entry.path)
           else await openPath(entry.path)
@@ -54,12 +57,12 @@ export function useHostEvents(): void {
         return
       }
 
-      if (ready.settings.lastFolder) await adoptFolder(ready.settings.lastFolder)
+      if (session.folder) await adoptFolder(session.folder)
 
-      if (ready.settings.lastFile) {
-        const stat = await api.fs.stat(ready.settings.lastFile).catch(() => null)
+      if (session.file) {
+        const stat = await api.fs.stat(session.file).catch(() => null)
         if (stat) {
-          await openPath(ready.settings.lastFile)
+          await openPath(session.file)
           return
         }
       }
