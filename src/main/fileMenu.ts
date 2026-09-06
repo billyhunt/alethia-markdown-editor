@@ -52,6 +52,15 @@ export async function showFileContextMenu(
       template.push(
         { type: 'separator' },
         {
+          label: 'Version History…',
+          // The history panel lives in the renderer, so main only reports
+          // which file was asked about.
+          click: () => {
+            outcome = { action: 'history', path: filePath }
+          },
+        },
+        { type: 'separator' },
+        {
           label: 'Rename…',
           // Renaming needs a text field, so the sidebar takes over from here.
           click: () => {

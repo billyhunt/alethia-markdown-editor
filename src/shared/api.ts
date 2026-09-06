@@ -93,6 +93,8 @@ export type FileContextResult =
   | { action: 'copiedPath' }
   /** Main does not rename; the sidebar edits the name in place. */
   | { action: 'rename'; path: string }
+  /** Show this file's version history, which lives in the renderer. */
+  | { action: 'history'; path: string }
   | { action: 'trashed'; path: string }
 
 /** One past state of a document, newest first in listings. */

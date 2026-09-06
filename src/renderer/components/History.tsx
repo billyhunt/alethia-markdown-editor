@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, unwrapIpcError } from '../api.ts'
 import { editorController } from '../editor/editorController.ts'
-import { useDocumentStore } from '../state/documentStore.ts'
+import { openPath } from '../services/fileOps.ts'
+import { documentName, useDocumentStore } from '../state/documentStore.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import type { DocumentVersion } from '../../shared/api'
 
@@ -23,44 +24,43 @@ const exactTime = (epochMs: number): string =>
   new Date(epochMs).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
 export default function History() {
-  const filePath = useDocumentStore((state) => state.filePath)
+  const openFile = useDocumentStore((state) => state.filePath)
   const savedText = useDocumentStore((state) => state.savedText)
+  const historyTarget = useWorkspaceStore((state) => state.historyTarget)
+  const showHistoryFor = useWorkspaceStore((state) => state.showHistoryFor)
   const [versions, setVersions] = useState<DocumentVersion[]>([])
 
+  // Right-clicking a file in the tree pins the panel to that file; otherwise
+  // it follows whatever is open.
+  const target = historyTarget ?? openFile
+  const isPinned = historyTarget !== null && historyTarget !== openFile
+
   const refresh = useCallback(() => {
-    // No synchronous setState here: the empty case is handled during render,
-    // and clearing it eagerly would only cause an extra pass.
-    if (!filePath) return
+    // No synchronous setState here: the empty case is handled during render.
+    if (!target) return
     void api.versions
-      .list(filePath)
+      .list(target)
       .then(setVersions)
       .catch(() => setVersions([]))
-  }, [filePath])
+  }, [target])
 
   // savedText changes on every write, which is exactly when a new snapshot
   // may have appeared.
   useEffect(refresh, [refresh, savedText])
 
-  if (!filePath) {
-    return <p className="sidebar-empty">No file open.</p>
-  }
-
-  // Versions belong to whichever file was fetched last; while a new fetch is
-  // in flight the list is simply empty rather than another file's history.
-  if (versions.length === 0) {
-    return (
-      <p className="sidebar-empty">
-        No earlier versions yet. One is kept each time a save replaces the file.
-      </p>
-    )
-  }
-
   const restore = (version: DocumentVersion) => {
+    if (!target) return
     void api.versions
-      .read(filePath, version.id)
-      .then((content) => {
-        // Applied as an ordinary edit rather than written to disk, so it
-        // lands in the undo history and nothing is committed until saved.
+      .read(target, version.id)
+      .then(async (content) => {
+        // Restoring a file that is not open would drop its content into the
+        // wrong document, so open it first and bail if that was declined.
+        if (target !== openFile) {
+          await openPath(target)
+          if (useDocumentStore.getState().filePath !== target) return
+        }
+        // An ordinary edit rather than a write: it joins the undo history and
+        // nothing reaches disk until saved.
         editorController.replaceAll(content)
         useWorkspaceStore.getState().setNotice({
           message: `Restored the version from ${exactTime(version.savedAt)}. Not saved yet.`,
@@ -78,20 +78,38 @@ export default function History() {
       )
   }
 
+  if (!target) {
+    return <p className="sidebar-empty">No file open. Right-click a file to see its history.</p>
+  }
+
   return (
     <>
-      {versions.map((version) => (
-        <button
-          key={version.id}
-          type="button"
-          className="tree-row history-row"
-          onClick={() => restore(version)}
-          title={`${exactTime(version.savedAt)} — click to restore into the editor`}
-        >
-          <span className="tree-label">{relativeTime(version.savedAt)}</span>
-          <span className="history-size">{formatBytes(version.bytes)}</span>
-        </button>
-      ))}
+      {isPinned && (
+        <div className="history-pin">
+          <span className="tree-label">{documentName(target)}</span>
+          <button type="button" className="history-unpin" onClick={() => showHistoryFor(null)}>
+            Clear
+          </button>
+        </div>
+      )}
+      {versions.length === 0 ? (
+        <p className="sidebar-empty">
+          No earlier versions yet. One is kept each time a save replaces this file.
+        </p>
+      ) : (
+        versions.map((version) => (
+          <button
+            key={version.id}
+            type="button"
+            className="tree-row history-row"
+            onClick={() => restore(version)}
+            title={`${exactTime(version.savedAt)} — click to restore into the editor`}
+          >
+            <span className="tree-label">{relativeTime(version.savedAt)}</span>
+            <span className="history-size">{formatBytes(version.bytes)}</span>
+          </button>
+        ))
+      )}
     </>
   )
 }

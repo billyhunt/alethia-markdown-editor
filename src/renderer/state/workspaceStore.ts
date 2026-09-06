@@ -14,6 +14,8 @@ export interface WorkspaceState {
   sidebarVisible: boolean
   sidebarWidth: number
   sidebarTab: 'files' | 'outline' | 'history'
+  /** Whose history the panel shows; null means the open document. */
+  historyTarget: string | null
   toolbarVisible: boolean
   autosave: boolean
   outline: OutlineEntry[]
@@ -28,6 +30,7 @@ export interface WorkspaceState {
   setSidebarVisible: (visible: boolean) => void
   setSidebarWidth: (width: number) => void
   setSidebarTab: (tab: 'files' | 'outline' | 'history') => void
+  showHistoryFor: (path: string | null) => void
   setToolbarVisible: (visible: boolean) => void
   setAutosave: (autosave: boolean) => void
   setOutline: (outline: OutlineEntry[]) => void
@@ -44,6 +47,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   sidebarVisible: true,
   sidebarWidth: 260,
   sidebarTab: 'files',
+  historyTarget: null,
   toolbarVisible: true,
   autosave: true,
   outline: [],
@@ -62,6 +66,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   setSidebarVisible: (sidebarVisible) => set({ sidebarVisible }),
   setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
   setSidebarTab: (sidebarTab) => set({ sidebarTab }),
+  showHistoryFor: (historyTarget) => set({ historyTarget, sidebarTab: 'history' }),
   setToolbarVisible: (toolbarVisible) => set({ toolbarVisible }),
   setAutosave: (autosave) => set({ autosave }),
   setOutline: (outline) => set({ outline }),

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, unwrapIpcError } from '../api.ts'
 import { openPath, refreshFolder, renameFile, forgetTrashedFile } from '../services/fileOps.ts'
 import { useDocumentStore } from '../state/documentStore.ts'
+import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import { ChevronIcon, FileIcon } from './icons.tsx'
 import type { FileNode } from '../../shared/api'
 
@@ -22,6 +23,9 @@ export default function FileTree({ node, depth }: Props) {
       .fileContext({ path: node.path, kind: node.kind })
       .then(async (result) => {
         if (result.action === 'rename') setRenaming(true)
+        else if (result.action === 'history') {
+          useWorkspaceStore.getState().showHistoryFor(result.path)
+        }
         else if (result.action === 'trashed') {
           forgetTrashedFile(result.path)
           await refreshFolder()

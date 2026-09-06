@@ -334,3 +334,28 @@ body.is-fullscreen .main-pane {
   font-size: 0.68rem;
   flex: 0 0 auto;
 }
+
+.history-pin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  margin-bottom: 0.25rem;
+  background: var(--accent-hot);
+  color: #111111;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+
+.history-unpin {
+  border: none;
+  background: transparent;
+  color: #111111;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
