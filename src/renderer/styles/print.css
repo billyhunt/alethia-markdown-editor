@@ -1,0 +1,184 @@
+/*
+ * Print keeps the design's black slabs rather than outlining them -- the
+ * target is a thermal printer, where solid black costs nothing.
+ *
+ * Two things still need handling, neither about ink:
+ *
+ * 1. Browsers drop background colours when printing unless told otherwise.
+ *    Without print-color-adjust the black table head prints white on white
+ *    and disappears completely.
+ * 2. A thermal printer is monochrome, so every colour becomes a grey. The
+ *    hot orange lands mid-grey, and black text on mid-grey is muddy -- so
+ *    the oranges become black rather than being left to dither badly.
+ *
+ * CodeMirror handles the rest: it drops viewport limiting on `beforeprint`,
+ * so the whole document renders rather than just the lines on screen.
+ */
+
+@media print {
+  @page {
+    margin: 18mm 16mm;
+  }
+
+  /* Backgrounds are load-bearing in this design, so they have to survive. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Chrome has no meaning on paper. */
+  .titlebar,
+  .sidebar,
+  .toolbar,
+  .statusbar,
+  .banner,
+  .cm-panels {
+    display: none !important;
+  }
+
+  .app {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .main-pane {
+    display: block;
+    padding-top: 0;
+  }
+
+  .editor-host {
+    overflow: visible;
+  }
+
+  /* Let the document flow down the page instead of scrolling in a box. */
+  .cm-editor,
+  .cm-scroller,
+  .cm-content {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .cm-content {
+    padding: 0 !important;
+    /* The screen's centred measure is narrower than a printed page wants. */
+    flex-basis: auto !important;
+    max-width: 100% !important;
+  }
+
+  .cm-cursor,
+  .cm-dropCursor,
+  .cm-selectionBackground {
+    display: none !important;
+  }
+
+  /* Dimmed text in focus mode must not print faded. */
+  .cm-line.cm-focus-dim {
+    opacity: 1 !important;
+  }
+
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+
+  /* The paper ground is painted by the editor element, not the body, so
+     setting body alone leaves the whole sheet cream -- which a thermal
+     printer renders as a full-page grey dither. */
+  .app,
+  .main-pane,
+  .editor-host,
+  .cm-editor,
+  .cm-scroller {
+    background: #ffffff !important;
+  }
+
+  /* Use the width of the page rather than the screen's centred measure. */
+  .cm-scroller {
+    justify-content: flex-start !important;
+  }
+
+  .cm-content {
+    flex-basis: 100% !important;
+    width: 100% !important;
+  }
+
+  /* The closing fence collapses to an empty widget, which prints as a bare
+     black bar. Keep the slab's bottom edge without the empty row. */
+  .cm-line.cm-md-codeblock-last {
+    font-size: 0 !important;
+    line-height: 0.5em !important;
+  }
+
+  /* Anything that was hot orange goes black: as a grey it would be both
+     lower contrast and off-key against the pure-black slabs. */
+  :root {
+    --accent: #000000;
+    --accent-hot: #000000;
+    --code-keyword: #ffffff;
+    --code-number: #ffffff;
+    --code-property: #ffffff;
+    --code-type: #ffffff;
+    --code-string: #d0d0d0;
+    --code-comment: #b0b0b0;
+    --code-operator: #b0b0b0;
+  }
+
+  /* The code slab stays solid, with the text knocked out of it. Colour
+     coding cannot survive a monochrome device, so weight carries the
+     emphasis instead. */
+  .cm-line.cm-md-codeblock {
+    background: #000000 !important;
+    color: #ffffff !important;
+  }
+
+  .cm-md-fence-label {
+    color: #ffffff;
+  }
+
+  .cm-md-table th {
+    background: #000000;
+    color: #ffffff;
+  }
+
+  .cm-md-table td:has(strong) {
+    background: #000000;
+    color: #ffffff;
+  }
+
+  /* An inline run of solid black is hard to read at body size, so links and
+     emphasis are ruled rather than filled. */
+  .cm-md-link {
+    background: transparent;
+    color: #000000;
+    padding: 0;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-thickness: 2px;
+  }
+
+  .cm-md-strong {
+    box-shadow: inset 0 -3px 0 #000000;
+  }
+
+  .cm-md-code {
+    background: transparent;
+    color: #000000;
+    border: 1px solid #000000;
+  }
+
+  .cm-md-bullet,
+  .cm-md-ol-mark {
+    color: #000000;
+  }
+
+  /* Keep related things together across a page break. */
+  .cm-md-heading {
+    break-after: avoid;
+  }
+
+  .cm-md-table-wrap {
+    break-inside: avoid;
+  }
+}

@@ -86,6 +86,11 @@ export function buildApplicationMenu(): void {
         cmd('Save As…', 'file:saveAs', 'CmdOrCtrl+Shift+S'),
         { type: 'separator' },
         cmd('Reveal in Finder', 'file:revealInFinder'),
+        { type: 'separator' },
+        // macOS's own print panel carries "Save as PDF", so this is the
+        // export path too and no separate PDF command is needed.
+        cmd('Print…', 'file:print', 'CmdOrCtrl+P'),
+        cmd('Export as PDF…', 'file:exportPdf', 'CmdOrCtrl+Shift+P'),
       ],
     },
     {

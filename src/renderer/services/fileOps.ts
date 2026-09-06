@@ -178,6 +178,30 @@ export async function closeDocument(): Promise<void> {
   await api.document.unwatch()
 }
 
+export async function exportPdf(): Promise<void> {
+  const { filePath } = useDocumentStore.getState()
+  try {
+    const written = await api.print.exportPdf(documentName(filePath))
+    if (written) {
+      useWorkspaceStore.getState().setNotice({
+        message: `Exported to ${written.split('/').pop() ?? 'PDF'}.`,
+        actions: [
+          {
+            label: 'Reveal in Finder',
+            run: () => {
+              void api.shell.showItemInFolder(written)
+              useWorkspaceStore.getState().setNotice(null)
+            },
+          },
+          { label: 'Dismiss', run: () => useWorkspaceStore.getState().setNotice(null) },
+        ],
+      })
+    }
+  } catch (error) {
+    await api.dialog.showError({ title: 'Could not export PDF', message: unwrapIpcError(error) })
+  }
+}
+
 export async function revealInFinder(): Promise<void> {
   const { filePath } = useDocumentStore.getState()
   if (filePath) await api.shell.showItemInFolder(filePath)

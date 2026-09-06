@@ -63,6 +63,9 @@ const api: MarkdownApi = {
     rendererReady: () => ipcRenderer.invoke(IPC.appRendererReady),
     grantDroppedPath: (filePath) => ipcRenderer.invoke(IPC.appGrantDroppedPath, filePath),
   },
+  print: {
+    exportPdf: (suggestedName) => ipcRenderer.invoke(IPC.printExportPdf, suggestedName),
+  },
   menu: {
     fileContext: (target) => ipcRenderer.invoke(IPC.menuFileContext, target),
   },

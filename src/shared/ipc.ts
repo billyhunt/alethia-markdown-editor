@@ -34,6 +34,7 @@ export const IPC = {
   appRendererReady: 'app:rendererReady',
   appGrantDroppedPath: 'app:grantDroppedPath',
   menuFileContext: 'menu:fileContext',
+  printExportPdf: 'print:exportPdf',
   shellOpenExternal: 'shell:openExternal',
   shellShowItemInFolder: 'shell:showItemInFolder',
 
@@ -77,6 +78,8 @@ export type HostCommand =
   | 'file:saveAs'
   | 'file:close'
   | 'file:revealInFinder'
+  | 'file:print'
+  | 'file:exportPdf'
   | 'view:toggleSidebar'
   | 'view:toggleToolbar'
   | 'view:toggleFocusMode'

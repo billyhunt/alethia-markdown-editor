@@ -4,6 +4,7 @@ import App from './App.tsx'
 import 'katex/dist/katex.min.css'
 import './styles/index.css'
 import './styles/shell.css'
+import './styles/print.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

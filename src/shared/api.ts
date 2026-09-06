@@ -163,6 +163,14 @@ export interface MarkdownApi {
     grantDroppedPath(path: string): Promise<OpenPathEvent>
   }
 
+  print: {
+    /**
+     * Renders the document to PDF using the print stylesheet and asks where
+     * to save it. Resolves the written path, or null if cancelled.
+     */
+    exportPdf(suggestedName: string): Promise<string | null>
+  }
+
   menu: {
     /**
      * Pops a native context menu for one sidebar row and performs the chosen

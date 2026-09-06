@@ -7,6 +7,7 @@ import {
   newDocument,
   openFileDialog,
   openFolderDialog,
+  exportPdf,
   revealInFinder,
   save,
   saveAs,
@@ -55,6 +56,14 @@ export function dispatchHostCommand(command: HostCommand): void {
       return
     case 'file:revealInFinder':
       void revealInFinder()
+      return
+    case 'file:exportPdf':
+      void exportPdf()
+      return
+    case 'file:print':
+      // CodeMirror expands its viewport on beforeprint, so the whole
+      // document prints rather than just the lines currently on screen.
+      window.print()
       return
     case 'view:toggleToolbar': {
       const store = useWorkspaceStore.getState()

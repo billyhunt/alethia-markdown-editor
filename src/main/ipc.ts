@@ -17,6 +17,7 @@ import { grantFile, grantRoot, validatePath } from './paths.ts'
 import { takePendingPaths } from './openWith.ts'
 import { markForceClose, setQuitting } from './window.ts'
 import { showFileContextMenu } from './fileMenu.ts'
+import { exportPdf } from './printing.ts'
 import { unwatchDocument, unwatchFolder, watchDocument, watchFolder } from './watcher.ts'
 import type {
   DocumentInfo,
@@ -147,6 +148,11 @@ export function registerIpcHandlers(): void {
   // --- context menu --------------------------------------------------------
   ipcMain.handle(IPC.menuFileContext, (event, target: unknown) =>
     showFileContextMenu(winOf(event), target),
+  )
+
+  // --- printing ------------------------------------------------------------
+  ipcMain.handle(IPC.printExportPdf, (event, suggestedName: unknown) =>
+    exportPdf(winOf(event), suggestedName),
   )
 
   // --- shell ---------------------------------------------------------------
