@@ -53,7 +53,6 @@ export async function openPath(filePath: string): Promise<void> {
 }
 
 export async function openFileDialog(): Promise<void> {
-  if (!(await ensureClosable())) return
   const chosen = await api.dialog.openFile()
   if (chosen) await openPath(chosen)
 }
@@ -102,6 +101,7 @@ async function writeTo(filePath: string, expectedMtimeMs: number | null): Promis
     useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs })
     await api.recents.add(filePath)
     await api.document.watch(filePath)
+    useWorkspaceStore.getState().setNotice(null)
     return true
   } catch (error) {
     await api.dialog.showError({ title: 'Could not save file', message: unwrapIpcError(error) })
@@ -147,19 +147,29 @@ export async function refreshFolder(): Promise<void> {
 }
 
 /**
- * The open document was moved to the Trash. Keep the text in the buffer -- it
- * is the only surviving copy -- but detach it from a path that no longer
- * exists, so Save prompts for a new location instead of recreating the file.
+ * An intentional trash closes a saved document. Only unsaved edits need to
+ * survive as an untitled buffer; the saved copy is recoverable from Trash.
  */
 export function forgetTrashedFile(filePath: string): void {
   const doc = useDocumentStore.getState()
   if (doc.filePath !== filePath) return
-  doc.load({ filePath: null, text: editorController.getText(), mtimeMs: null })
-  doc.setDirty(true)
+  const text = editorController.getText()
+  // Compare the actual buffer: the dirty indicator may still be debouncing.
+  const keepEdits = text.length > 0 && text !== doc.savedText
+  if (!keepEdits) editorController.setDocument('')
+  // An untitled buffer's baseline is empty, so undoing an edit cannot mark
+  // retained text as saved when its file no longer exists.
+  doc.load({ filePath: null, text: '', mtimeMs: null, lineEnding: doc.lineEnding })
+  doc.setDirty(keepEdits)
   void api.document.unwatch()
   useWorkspaceStore.getState().setNotice({
-    message: 'Moved to Trash. The text is still open here, unsaved.',
-    actions: [{ label: 'Dismiss', run: () => useWorkspaceStore.getState().setNotice(null) }],
+    message: keepEdits
+      ? 'Moved to Trash. Your unsaved edits are still here. Use Save As to keep them.'
+      : 'Moved to Trash.',
+    actions: [
+      ...(keepEdits ? [{ label: 'Save As', run: () => { void saveAs() } }] : []),
+      { label: 'Dismiss', run: () => useWorkspaceStore.getState().setNotice(null) },
+    ],
   })
 }
 
@@ -186,6 +196,7 @@ export async function closeDocument(): Promise<void> {
   editorController.setDocument('')
   useDocumentStore.getState().load({ filePath: null, text: '', mtimeMs: null })
   await api.document.unwatch()
+  useWorkspaceStore.getState().setNotice(null)
 }
 
 export async function exportPdf(): Promise<void> {
