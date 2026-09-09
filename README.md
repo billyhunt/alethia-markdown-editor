@@ -38,6 +38,21 @@ say "Electron" no matter what the app calls itself. `npm install` restores the
 stock bundle, which is why the step re-runs each time. Packaged builds need
 none of this.
 
+## Example documents
+
+Open these files in Alethia to see its rendering, or browse their Markdown on GitHub:
+
+| Document | What it shows |
+|---|---|
+| [Welcome tour](public/sample.md) | A larger observing table, inline formatting, lists, code, and a first equation |
+| [Formula notebook](public/examples/formula-notebook.md) | Inline and display math, aligned equations, sums, matrices, and an integral |
+| [Project notes](public/examples/project-notes.md) | YAML front matter, a project board, nested checklists, heading levels, and code in three languages |
+
+Open `public` with **Cmd+Shift+O** to browse all three from the sidebar. The welcome
+tour also appears when the app starts without a saved document to restore.
+Click into a rendered table or equation to edit its source, then move the caret
+away to see it rendered again. The example files are bundled with packaged builds.
+
 ## Building
 
 ```bash
