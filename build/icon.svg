@@ -3,7 +3,8 @@
   <desc id="desc">A black Greek alpha in an orange table cell.</desc>
   <!-- The accent used in the editor's active table cell becomes the whole tile. -->
   <rect width="1024" height="1024" rx="224" fill="#ff3b00"/>
-  <rect x="34" y="34" width="956" height="956" rx="190" fill="none" stroke="#111111" stroke-width="36"/>
+  <!-- Keep the rule inside the macOS app-switcher mask, including its corners. -->
+  <rect x="64" y="64" width="896" height="896" rx="160" fill="none" stroke="#111111" stroke-width="36"/>
   <!-- Math-style alpha: direct, legible, and Greek without a decorative motif. -->
-  <text x="484" y="710" fill="#111111" stroke="#111111" stroke-width="20" stroke-linejoin="round" paint-order="stroke fill" font-family="Times New Roman, Times, serif" font-size="900" font-style="italic" text-anchor="middle">α</text>
+  <text x="484" y="710" fill="#111111" stroke="#111111" stroke-width="20" stroke-linejoin="round" paint-order="stroke fill" font-family="Times New Roman, Times, serif" font-size="900" font-style="normal" text-anchor="middle">α</text>
 </svg>

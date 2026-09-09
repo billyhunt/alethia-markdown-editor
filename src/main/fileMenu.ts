@@ -28,6 +28,7 @@ export async function showFileContextMenu(
 
   return new Promise<FileContextResult>((resolve) => {
     let outcome: FileContextResult = { action: 'cancelled' }
+    let pendingAction: Promise<void> | undefined
 
     const template: Electron.MenuItemConstructorOptions[] = [
       {
@@ -69,13 +70,11 @@ export async function showFileContextMenu(
         },
         {
           label: 'Move to Trash',
-          click: async () => {
-            try {
-              await shell.trashItem(filePath)
-              outcome = { action: 'trashed', path: filePath }
-            } catch {
-              outcome = { action: 'cancelled' }
-            }
+          click: () => {
+            pendingAction = shell.trashItem(filePath).then(
+              () => { outcome = { action: 'trashed', path: filePath } },
+              () => { outcome = { action: 'cancelled' } },
+            )
           },
         },
       )
@@ -84,9 +83,11 @@ export async function showFileContextMenu(
     const menu = Menu.buildFromTemplate(template)
     menu.popup({
       window: win ?? undefined,
-      // A click handler may still be running when the menu closes; give it a
-      // tick so `outcome` is settled before resolving.
-      callback: () => setTimeout(() => resolve(outcome), 60),
+      // Closing the native menu does not await its async click handler.
+      callback: async () => {
+        await pendingAction
+        resolve(outcome)
+      },
     })
   })
 }
