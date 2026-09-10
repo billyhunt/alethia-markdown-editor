@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { isReadablePath } from '../shared/markdown.ts'
-import { readTextFile, renameFile, statPath, writeTextFile } from './files.ts'
+import { createNamedFile, readTextFile, renameFile, statPath, writeTextFile } from './files.ts'
 import { listMarkdownTree } from './folder.ts'
 import {
   confirmSaveChanges,
@@ -13,11 +13,19 @@ import {
 } from './dialogs.ts'
 import { getSettings, patchSettings } from './settings.ts'
 import { EMPTY_SESSION } from '../shared/settings.ts'
-import { addRecent, clearRecents, listRecents } from './recents.ts'
+import {
+  addRecent,
+  addRecentFolder,
+  clearRecentFolders,
+  clearRecents,
+  listRecentFolders,
+  listRecents,
+} from './recents.ts'
 import { grantFile, grantRoot, validatePath } from './paths.ts'
 import { takePendingPaths } from './openWith.ts'
 import { markForceClose, noteDocument, noteFolder, setQuitting, takeSession } from './windows.ts'
 import { showFileContextMenu } from './fileMenu.ts'
+import { showFolderSwitcherMenu } from './folderMenu.ts'
 import { exportPdf } from './printing.ts'
 import { clearVersions, listVersions, readVersion } from './versions.ts'
 import { unwatchDocument, unwatchFolder, watchDocument, watchFolder } from './watcher.ts'
@@ -68,6 +76,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.fsRename, (_event, filePath: unknown, name: unknown) =>
     renameFile(filePath, name),
   )
+  ipcMain.handle(IPC.fsCreateFile, (_event, opts: unknown) => createNamedFile(opts))
 
   // --- folder --------------------------------------------------------------
   ipcMain.handle(IPC.folderList, (_event, root: unknown) => listMarkdownTree(root))
@@ -108,6 +117,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.recentsList, () => listRecents())
   ipcMain.handle(IPC.recentsAdd, (_event, filePath: unknown) => addRecent(filePath))
   ipcMain.handle(IPC.recentsClear, () => clearRecents())
+  ipcMain.handle(IPC.recentsListFolders, () => listRecentFolders())
+  ipcMain.handle(IPC.recentsAddFolder, (_event, dirPath: unknown) => addRecentFolder(dirPath))
+  ipcMain.handle(IPC.recentsClearFolders, () => clearRecentFolders())
 
   // --- settings ------------------------------------------------------------
   ipcMain.handle(IPC.settingsGet, () => getSettings())
@@ -173,6 +185,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.menuFileContext, (event, target: unknown) =>
     showFileContextMenu(winOf(event), target),
   )
+  ipcMain.handle(IPC.menuFolderSwitcher, (event, opts: unknown) => {
+    const current = asObject(opts).current
+    return showFolderSwitcherMenu(winOf(event), typeof current === 'string' ? current : null)
+  })
 
   // --- versions ------------------------------------------------------------
   ipcMain.handle(IPC.versionsList, (_event, filePath: unknown) => listVersions(filePath))

@@ -114,6 +114,21 @@ links, bare URLs, horizontal rules, blockquotes, nested bullet and ordered
 lists, task checkboxes, fenced code with per-language highlighting, GFM tables,
 `$…$` and `$$…$$` math via KaTeX, and YAML front matter.
 
+A new document files itself. Start typing and, once typing settles, it is saved
+under its own title (the first heading, or the first line) into the open
+folder, or into `~/Documents/Alethia` when no folder is open. No Save As sheet
+appears mid-sentence, an existing file is never overwritten (the name is
+numbered instead), and the file keeps following the title until you rename it
+or use Save As, which hands naming back to you. Turning off Autosave in the
+View menu turns this off too.
+
+Folders work like vaults. The sidebar header names the open folder; clicking it
+lists the folders opened before, so switching between a notes vault and a
+repository is one click rather than a directory dialog. The same list is under
+File > Open Recent Folder, and on the sidebar's empty state. Switching the
+folder leaves the open document alone, and folders that have been moved or
+deleted drop off the list.
+
 Around it: open/save/save-as with dirty tracking, autosave, per-file version
 history, a folder sidebar with rename/reveal/trash, a heading outline, live word
 and character counts, recent files, session restore, external-change detection,

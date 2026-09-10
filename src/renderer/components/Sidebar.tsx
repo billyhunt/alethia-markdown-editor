@@ -1,14 +1,33 @@
 import { editorController } from '../editor/editorController.ts'
-import { openFolderDialog } from '../services/fileOps.ts'
+import { adoptFolder, openFolderDialog, switchFolder } from '../services/fileOps.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import FileTree from './FileTree.tsx'
 import History from './History.tsx'
 
+const folderName = (dirPath: string): string => dirPath.split('/').filter(Boolean).pop() ?? dirPath
+
 export default function Sidebar() {
-  const { tree, truncated, sidebarTab, outline, setSidebarTab } = useWorkspaceStore()
+  const { folderRoot, recentFolders, tree, truncated, sidebarTab, outline, setSidebarTab } =
+    useWorkspaceStore()
+
+  // Somewhere else to go, offered on the empty state so a first launch is not
+  // a dead end.
+  const elsewhere = recentFolders.filter((dir) => dir !== folderRoot)
 
   return (
     <aside className="sidebar">
+      <button
+        type="button"
+        className="sidebar-workspace"
+        onClick={() => void switchFolder()}
+        title={folderRoot ?? 'No folder open'}
+      >
+        <span className="tree-label">{folderRoot ? folderName(folderRoot) : 'No folder'}</span>
+        <span className="sidebar-workspace-caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+
       <div className="sidebar-tabs">
         <button
           type="button"
@@ -48,6 +67,22 @@ export default function Sidebar() {
               <button type="button" className="button" onClick={() => void openFolderDialog()}>
                 Open Folder…
               </button>
+              {elsewhere.length > 0 && (
+                <>
+                  <p className="sidebar-recents-heading">Recent</p>
+                  {elsewhere.map((dir) => (
+                    <button
+                      key={dir}
+                      type="button"
+                      className="tree-row"
+                      title={dir}
+                      onClick={() => void adoptFolder(dir)}
+                    >
+                      <span className="tree-label">{folderName(dir)}</span>
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )
         ) : outline.length > 0 ? (

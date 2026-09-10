@@ -2,7 +2,12 @@ import { useEffect } from 'react'
 import { api } from '../api.ts'
 import { dispatchHostCommand } from '../services/commandDispatcher.ts'
 import { handleFileChange } from '../services/externalChanges.ts'
-import { adoptFolder, ensureClosable, openPath } from '../services/fileOps.ts'
+import {
+  adoptFolder,
+  ensureClosable,
+  openPath,
+  refreshRecentFolders,
+} from '../services/fileOps.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import { useDocumentStore } from '../state/documentStore.ts'
 import { editorController } from '../editor/editorController.ts'
@@ -40,6 +45,9 @@ export function useHostEvents(): void {
       workspace.setSidebarWidth(ready.settings.sidebar.width)
       workspace.setToolbarVisible(ready.settings.toolbarVisible)
       workspace.setAutosave(ready.settings.autosave)
+      // The switcher should be populated before anything is opened, so a
+      // window with no folder still offers somewhere to go.
+      await refreshRecentFolders()
 
       // A path handed to us by Finder or argv wins over restoring last session.
       // This window's own session, rather than one application-wide pair.
@@ -85,8 +93,9 @@ async function showWelcomeDocument(): Promise<void> {
     const text = await response.text()
     editorController.setDocument(text)
     // Left untitled deliberately: Save prompts for a location rather than
-    // writing back into the app bundle.
-    useDocumentStore.getState().load({ filePath: null, text, mtimeMs: null })
+    // writing back into the app bundle. It is also not auto-named -- the tour
+    // is the app's text, not a document the user started.
+    useDocumentStore.getState().load({ filePath: null, text, mtimeMs: null, autoNameable: false })
   } catch {
     /* an empty editor is an acceptable fallback */
   }

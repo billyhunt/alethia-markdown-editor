@@ -1,5 +1,7 @@
+import path from 'node:path'
 import { app, Menu, shell, type MenuItemConstructorOptions, type BrowserWindow } from 'electron'
-import { sendCommand, focusedWindow } from './commands.ts'
+import { IPC } from '../shared/ipc.ts'
+import { sendCommand, focusedWindow, sendToRenderer } from './commands.ts'
 import { createWindow } from './windows.ts'
 import { applyTheme } from './theme.ts'
 import { getSettings, patchSettings } from './settings.ts'
@@ -38,6 +40,37 @@ function dispatch(win: BrowserWindow | undefined, command: HostCommand): void {
   if (command === 'file:new' || command === 'file:open' || command === 'file:openFolder') {
     const created = createWindow()
     created.webContents.once('did-finish-load', () => sendCommand(created, command))
+  }
+}
+
+/**
+ * Recent workspace folders, so switching between them never needs the
+ * directory dialog. The renderer already knows how to adopt a folder handed
+ * to it as an open path, so this reuses that route rather than inventing a
+ * command that carries an argument.
+ */
+function recentFoldersSubmenu(): MenuItemConstructorOptions {
+  const recents = getSettings().recentFolders
+  if (recents.length === 0) {
+    return { label: 'Open Recent Folder', enabled: false, submenu: [] }
+  }
+  return {
+    label: 'Open Recent Folder',
+    submenu: recents.map((dir) => ({
+      label: path.basename(dir) || dir,
+      sublabel: path.dirname(dir),
+      click: (_item, win) => {
+        const target = (win as BrowserWindow | undefined) ?? focusedWindow()
+        if (target) {
+          sendToRenderer(target, IPC.hostOpenPath, { path: dir, kind: 'dir' })
+          return
+        }
+        const created = createWindow()
+        created.webContents.once('did-finish-load', () =>
+          sendToRenderer(created, IPC.hostOpenPath, { path: dir, kind: 'dir' }),
+        )
+      },
+    })),
   }
 }
 
@@ -85,6 +118,7 @@ export function buildApplicationMenu(): void {
         cmd('Open Folder…', 'file:openFolder', 'CmdOrCtrl+Shift+O'),
         // macOS populates this natively from app.addRecentDocument.
         { role: 'recentDocuments', submenu: [{ role: 'clearRecentDocuments' }] },
+        recentFoldersSubmenu(),
         { type: 'separator' },
         cmd('Close File', 'file:close', 'CmdOrCtrl+W'),
         { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' },

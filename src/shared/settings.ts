@@ -24,6 +24,8 @@ export interface Settings {
   toolbarVisible: boolean
   autosave: boolean
   recentFiles: string[]
+  /** Folders opened as a workspace, newest first. The vault switcher. */
+  recentFolders: string[]
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   toolbarVisible: true,
   autosave: true,
   recentFiles: [],
+  recentFolders: [],
 }
 
 export const EMPTY_SESSION: WindowSession = {
