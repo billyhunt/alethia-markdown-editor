@@ -60,6 +60,11 @@ function coerce(raw: unknown): Settings {
     recentFiles: Array.isArray(input.recentFiles)
       ? input.recentFiles.filter((entry): entry is string => typeof entry === 'string').slice(0, 20)
       : [],
+    recentFolders: Array.isArray(input.recentFolders)
+      ? input.recentFolders
+          .filter((entry): entry is string => typeof entry === 'string')
+          .slice(0, 20)
+      : [],
   }
 }
 

@@ -1,4 +1,5 @@
 import { api, unwrapIpcError } from '../api.ts'
+import { fileNameForDocument } from '../../shared/titles.ts'
 import { editorController } from '../editor/editorController.ts'
 import { documentName, useDocumentStore } from '../state/documentStore.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
@@ -67,9 +68,36 @@ export async function adoptFolder(root: string): Promise<void> {
     const folder = await api.folder.list(root)
     useWorkspaceStore.getState().setFolder(folder)
     await api.folder.watch(root)
+    // Every folder opened becomes somewhere to switch back to.
+    await api.recents.addFolder(root)
+    await refreshRecentFolders()
   } catch (error) {
     await api.dialog.showError({ title: 'Could not open folder', message: unwrapIpcError(error) })
   }
+}
+
+/** Reads the switcher list back from main, which prunes vanished folders. */
+export async function refreshRecentFolders(): Promise<void> {
+  const folders = await api.recents.listFolders().catch(() => [])
+  useWorkspaceStore.getState().setRecentFolders(folders)
+}
+
+/**
+ * The workspace switcher, in the vein of Obsidian's vault switcher: pick a
+ * folder opened before, or open a new one.
+ *
+ * Switching replaces the sidebar's folder and leaves the open document
+ * alone. A document is not owned by the workspace it was reached through,
+ * and closing someone's file because they looked at another folder would be
+ * a surprising thing to do with unsaved work.
+ */
+export async function switchFolder(): Promise<void> {
+  const result = await api.menu.folderSwitcher({
+    current: useWorkspaceStore.getState().folderRoot,
+  })
+  if (result.action === 'switch') await adoptFolder(result.path)
+  else if (result.action === 'open') await openFolderDialog()
+  else if (result.action === 'cleared') await refreshRecentFolders()
 }
 
 export async function save(): Promise<boolean> {
@@ -85,11 +113,73 @@ export async function saveAs(): Promise<boolean> {
     defaultDir: useWorkspaceStore.getState().folderRoot,
   })
   if (!chosen) return false
-  // A brand new path has nothing to conflict with.
-  return writeTo(chosen, null)
+  // Naming it by hand ends the automatic naming: from here the file is the
+  // user's to call whatever they like.
+  return writeTo(chosen, null, false)
 }
 
-async function writeTo(filePath: string, expectedMtimeMs: number | null): Promise<boolean> {
+/**
+ * Gives an untitled buffer a file of its own, named after its title, with no
+ * dialog in the way.
+ *
+ * The file lands in the open folder, or in ~/Documents/Alethia when there is
+ * no workspace. Nothing is overwritten -- main numbers the name if it is
+ * taken -- and until the user renames or Save-As's it, the file keeps
+ * following the title (see syncAutoName).
+ *
+ * Returns false when there is no title yet, which just means the next idle
+ * pause tries again.
+ */
+export async function saveNewByTitle(): Promise<boolean> {
+  const { filePath, autoNameable } = useDocumentStore.getState()
+  if (filePath || !autoNameable) return false
+  const name = fileNameForDocument(editorController.getText())
+  if (!name) return false
+
+  let created: string
+  try {
+    created = await api.fs.createFile({ dir: useWorkspaceStore.getState().folderRoot, name })
+  } catch {
+    // Saving on the user's behalf must never interrupt them. A failure here
+    // leaves the buffer untitled, exactly as it was.
+    return false
+  }
+  const saved = await writeTo(created, null, true)
+  if (saved) await refreshFolder()
+  return saved
+}
+
+/**
+ * Keeps an automatically named file's name in step with its title, so a
+ * heading finished after the first save is not left behind on disk.
+ *
+ * Best effort by design: a name already taken, or any other failure, simply
+ * leaves the current name in place.
+ */
+export async function syncAutoName(): Promise<void> {
+  const { namedByTitle, filePath } = useDocumentStore.getState()
+  if (!namedByTitle || !filePath) return
+  const wanted = fileNameForDocument(editorController.getText())
+  if (!wanted || wanted === documentName(filePath)) return
+
+  try {
+    const next = await api.fs.rename(filePath, wanted)
+    // Only the identity moved: the buffer, its dirty flag and its baseline
+    // are unchanged, and the save that follows writes to the new path.
+    useDocumentStore.getState().setPath(next, true)
+    await api.recents.add(next)
+    await api.document.watch(next)
+    await refreshFolder()
+  } catch {
+    // Keep the name it has; the document is still saved either way.
+  }
+}
+
+async function writeTo(
+  filePath: string,
+  expectedMtimeMs: number | null,
+  namedByTitle?: boolean,
+): Promise<boolean> {
   const text = editorController.getText()
   const { lineEnding } = useDocumentStore.getState()
   try {
@@ -98,7 +188,7 @@ async function writeTo(filePath: string, expectedMtimeMs: number | null): Promis
       showConflictNotice(filePath, text)
       return false
     }
-    useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs })
+    useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs, namedByTitle })
     await api.recents.add(filePath)
     await api.document.watch(filePath)
     useWorkspaceStore.getState().setNotice(null)
@@ -158,8 +248,16 @@ export function forgetTrashedFile(filePath: string): void {
   const keepEdits = text.length > 0 && text !== doc.savedText
   if (!keepEdits) editorController.setDocument('')
   // An untitled buffer's baseline is empty, so undoing an edit cannot mark
-  // retained text as saved when its file no longer exists.
-  doc.load({ filePath: null, text: '', mtimeMs: null, lineEnding: doc.lineEnding })
+  // retained text as saved when its file no longer exists. These edits are
+  // never filed automatically: re-creating what was just sent to the Trash,
+  // under nearly the same name, is the opposite of what was asked for.
+  doc.load({
+    filePath: null,
+    text: '',
+    mtimeMs: null,
+    lineEnding: doc.lineEnding,
+    autoNameable: false,
+  })
   doc.setDirty(keepEdits)
   void api.document.unwatch()
   useWorkspaceStore.getState().setNotice({
@@ -179,8 +277,8 @@ export async function renameFile(filePath: string, name: string): Promise<void> 
     const next = await api.fs.rename(filePath, name)
     if (wasOpen) {
       // Follow the file: the buffer is unchanged, only its identity moved.
-      const doc = useDocumentStore.getState()
-      doc.load({ filePath: next, text: doc.savedText, mtimeMs: doc.mtimeMs })
+      // A hand-picked name also ends automatic naming.
+      useDocumentStore.getState().setPath(next, false)
       await api.recents.add(next)
       await api.document.watch(next)
     }
