@@ -1,5 +1,10 @@
 export type ThemePreference = 'system' | 'light' | 'dark'
 
+/** Shared so the loader and the writer cannot disagree about the caps. */
+export const MAX_RECENTS = 20
+/** Short enough to stay a switcher rather than a history. */
+export const MAX_RECENT_FOLDERS = 10
+
 export interface WindowBounds {
   x?: number
   y?: number

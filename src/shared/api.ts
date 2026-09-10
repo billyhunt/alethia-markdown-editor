@@ -262,5 +262,7 @@ export interface MarkdownApi {
     folderTree(cb: (t: FolderTree) => void): Unsubscribe
     closeRequested(cb: (e: CloseRequestedEvent) => void): Unsubscribe
     fullScreenChanged(cb: (isFullScreen: boolean) => void): Unsubscribe
+    /** Recents are application-wide; every window hears about a change. */
+    recentFoldersChanged(cb: (folders: string[]) => void): Unsubscribe
   }
 }

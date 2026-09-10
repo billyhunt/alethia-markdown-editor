@@ -4,10 +4,17 @@ import os from 'node:os'
 import path from 'node:path'
 
 const USER_DATA = path.join(os.tmpdir(), 'alethia-recentfolders-userdata')
+const sent = vi.hoisted(() => [] as Array<[string, unknown]>)
+const windows = vi.hoisted(() => [
+  { webContents: { send: (channel: string, payload: unknown) => sent.push([channel, payload]) } },
+])
 vi.mock('electron', () => ({
   app: { getPath: () => USER_DATA, addRecentDocument: vi.fn(), clearRecentDocuments: vi.fn() },
   Menu: { buildFromTemplate: vi.fn(() => ({})), setApplicationMenu: vi.fn() },
-  BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] },
+  BrowserWindow: {
+    getFocusedWindow: () => null,
+    getAllWindows: () => windows,
+  },
   shell: { openExternal: vi.fn() },
   nativeTheme: {},
   screen: {},
@@ -38,6 +45,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   patchSettings({ recentFolders: [] })
+  sent.length = 0
 })
 
 describe('recent workspace folders', () => {
@@ -83,6 +91,28 @@ describe('recent workspace folders', () => {
   it('rejects a path that is not absolute', async () => {
     await expect(addRecentFolder('notes')).rejects.toThrow()
     await expect(addRecentFolder(42)).rejects.toThrow()
+  })
+
+  it('keeps a folder it cannot reach right now', async () => {
+    // An unplugged drive or a sleeping share is a temporary condition, and
+    // dropping the vault over one would be unrecoverable from the switcher.
+    await addRecentFolder(vaultA)
+    const stat = vi.spyOn(fs, 'stat').mockRejectedValue(
+      Object.assign(new Error('EIO'), { code: 'EIO' }),
+    )
+    expect(await listRecentFolders()).toEqual([vaultA])
+    expect(getSettings().recentFolders).toEqual([vaultA])
+    stat.mockRestore()
+  })
+
+  it('tells every window when the list changes', async () => {
+    await addRecentFolder(vaultA)
+    expect(sent.map(([channel]) => channel)).toContain('host:recentFoldersChanged')
+    expect(sent.at(-1)?.[1]).toEqual([vaultA])
+
+    sent.length = 0
+    clearRecentFolders()
+    expect(sent.at(-1)).toEqual(['host:recentFoldersChanged', []])
   })
 
   it('clears the whole list', async () => {

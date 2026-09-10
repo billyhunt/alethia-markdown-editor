@@ -33,7 +33,15 @@ export function useAutosave(): void {
       timer = window.setTimeout(() => {
         const { autosave } = useWorkspaceStore.getState()
         const { dirty, filePath, namedByTitle } = useDocumentStore.getState()
-        if (!autosave || !dirty || running) return
+        // A save already in flight can take a while -- creating a file and
+        // relisting a large folder -- so come back rather than dropping this
+        // pass, which would otherwise leave the last edits unwritten until
+        // the next keystroke.
+        if (running) {
+          schedule()
+          return
+        }
+        if (!autosave || !dirty) return
         running = true
         void (async () => {
           if (!filePath) {

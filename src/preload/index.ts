@@ -92,6 +92,7 @@ const api: MarkdownApi = {
     folderTree: (cb) => subscribe(IPC.hostFolderTree, cb),
     closeRequested: (cb) => subscribe(IPC.hostCloseRequested, cb),
     fullScreenChanged: (cb) => subscribe(IPC.hostFullScreenChanged, cb),
+    recentFoldersChanged: (cb) => subscribe(IPC.hostRecentFoldersChanged, cb),
   },
 }
 

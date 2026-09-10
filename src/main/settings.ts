@@ -4,6 +4,8 @@ import path from 'node:path'
 import { app } from 'electron'
 import {
   DEFAULT_SETTINGS,
+  MAX_RECENTS,
+  MAX_RECENT_FOLDERS,
   type Settings,
   type SettingsPatch,
   type WindowSession,
@@ -58,12 +60,14 @@ function coerce(raw: unknown): Settings {
         : DEFAULT_SETTINGS.toolbarVisible,
     autosave: typeof input.autosave === 'boolean' ? input.autosave : DEFAULT_SETTINGS.autosave,
     recentFiles: Array.isArray(input.recentFiles)
-      ? input.recentFiles.filter((entry): entry is string => typeof entry === 'string').slice(0, 20)
+      ? input.recentFiles
+          .filter((entry): entry is string => typeof entry === 'string')
+          .slice(0, MAX_RECENTS)
       : [],
     recentFolders: Array.isArray(input.recentFolders)
       ? input.recentFolders
           .filter((entry): entry is string => typeof entry === 'string')
-          .slice(0, 20)
+          .slice(0, MAX_RECENT_FOLDERS)
       : [],
   }
 }

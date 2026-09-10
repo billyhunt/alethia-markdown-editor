@@ -80,6 +80,9 @@ export async function adoptFolder(root: string): Promise<void> {
     await refreshRecentFolders()
   } catch (error) {
     await api.dialog.showError({ title: 'Could not open folder', message: unwrapIpcError(error) })
+    // A folder that has gone away should stop being offered, rather than
+    // failing the same way on every click for the rest of the session.
+    await refreshRecentFolders()
   }
 }
 
@@ -125,6 +128,10 @@ export async function saveAs(): Promise<boolean> {
   return writeTo(chosen, null, false)
 }
 
+/** Consecutive failures to file a new document, so it can say so once. */
+let autoFileFailures = 0
+const FAILURES_BEFORE_NOTICE = 2
+
 /**
  * Gives an untitled buffer a file of its own, named after its title, with no
  * dialog in the way.
@@ -155,10 +162,23 @@ export async function saveNewByTitle(): Promise<boolean> {
       lineEnding,
     })
   } catch {
-    // Saving on the user's behalf must never interrupt them. A failure here
-    // leaves the buffer untitled, exactly as it was.
+    // Saving on the user's behalf must never interrupt them with a dialog,
+    // but it must not fail silently forever either: a folder that cannot be
+    // written would otherwise leave someone typing into a document that is
+    // never saved and never says so.
+    autoFileFailures += 1
+    if (autoFileFailures === FAILURES_BEFORE_NOTICE) {
+      useWorkspaceStore.getState().setNotice({
+        message: 'This document could not be saved automatically. Use Save As to choose a place.',
+        actions: [
+          { label: 'Save As', run: () => { void saveAs() } },
+          { label: 'Dismiss', run: () => useWorkspaceStore.getState().setNotice(null) },
+        ],
+      })
+    }
     return false
   }
+  autoFileFailures = 0
   await refreshFolder()
 
   const doc = useDocumentStore.getState()
@@ -168,7 +188,16 @@ export async function saveNewByTitle(): Promise<boolean> {
     // this buffer is no longer that document and must not claim its path.
     return false
   }
-  doc.markSaved({ filePath: created.path, text, mtimeMs: created.mtimeMs, namedByTitle: true })
+  doc.markSaved({
+    filePath: created.path,
+    text,
+    mtimeMs: created.mtimeMs,
+    namedByTitle: true,
+    // What the title asked for, which is not always what it got: a taken
+    // name is numbered, and comparing against the numbered name later would
+    // make the document try to rename itself forever.
+    autoNameBase: name,
+  })
   // Typing during the write leaves the buffer ahead of what was saved.
   doc.setDirty(editorController.getText() !== text)
   await api.recents.add(created.path)
@@ -185,10 +214,15 @@ export async function saveNewByTitle(): Promise<boolean> {
  * leaves the current name in place.
  */
 export async function syncAutoName(): Promise<void> {
-  const { namedByTitle, filePath, revision } = useDocumentStore.getState()
+  const { namedByTitle, filePath, autoNameBase, revision } = useDocumentStore.getState()
   if (!namedByTitle || !filePath) return
   const wanted = fileNameForDocument(editorController.getText())
-  if (!wanted || wanted === documentName(filePath)) return
+  // Compared against the name the title last produced, not the name on disk:
+  // a numbered file (Notes 2.md) would never match its own title and would
+  // ask for the taken name on every save, then take it the moment it was
+  // freed -- from the user's side, the file vanishing and reappearing under
+  // a name they never chose.
+  if (!wanted || wanted === autoNameBase || wanted === documentName(filePath)) return
 
   try {
     const next = await api.fs.rename(filePath, wanted)
@@ -202,12 +236,16 @@ export async function syncAutoName(): Promise<void> {
     }
     // Only the identity moved: the buffer, its dirty flag and its baseline
     // are unchanged, and the save that follows writes to the new path.
-    doc.setPath(next, true)
+    doc.setPath(next, { namedByTitle: true, autoNameBase: wanted })
     await api.recents.add(next)
     await api.document.watch(next)
     await refreshFolder()
   } catch {
-    // Keep the name it has; the document is still saved either way.
+    // The name is taken, or the move was refused. Record what the title
+    // asked for anyway: retrying it every two seconds would achieve nothing
+    // except to claim the name behind the user's back if it ever came free.
+    const doc = useDocumentStore.getState()
+    if (doc.revision === revision && doc.filePath === filePath) doc.setAutoNameBase(wanted)
   }
 }
 
@@ -324,7 +362,7 @@ export async function renameFile(filePath: string, name: string): Promise<void> 
     if (wasOpen) {
       // Follow the file: the buffer is unchanged, only its identity moved.
       // A hand-picked name also ends automatic naming.
-      useDocumentStore.getState().setPath(next, false)
+      useDocumentStore.getState().setPath(next, { namedByTitle: false })
       await api.recents.add(next)
       await api.document.watch(next)
     }

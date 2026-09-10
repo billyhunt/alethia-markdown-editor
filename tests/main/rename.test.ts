@@ -4,9 +4,25 @@ import os from 'node:os'
 import path from 'node:path'
 
 const USER_DATA = path.join(os.tmpdir(), 'alethia-rename-userdata')
-vi.mock('electron', () => ({ app: { getPath: () => USER_DATA } }))
+const recentDocuments = vi.hoisted(() => [] as string[])
+vi.mock('electron', () => ({
+  app: {
+    getPath: () => USER_DATA,
+    addRecentDocument: (p: string) => recentDocuments.push(p),
+    clearRecentDocuments: () => {
+      recentDocuments.length = 0
+    },
+  },
+  Menu: { buildFromTemplate: vi.fn(() => ({})), setApplicationMenu: vi.fn() },
+  BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] },
+  shell: { openExternal: vi.fn() },
+  nativeTheme: {},
+  screen: {},
+}))
 
 const { readTextFile, renameFile, writeTextFile } = await import('../../src/main/files.ts')
+const { renameRecent } = await import('../../src/main/recents.ts')
+const { patchSettings, getSettings } = await import('../../src/main/settings.ts')
 const { listVersions } = await import('../../src/main/versions.ts')
 const { assertReadable, grantRoot } = await import('../../src/main/paths.ts')
 
@@ -83,6 +99,17 @@ describe('renameFile', () => {
     const to = await renameFile(at('two.md'), 'one.md')
     const versions = await listVersions(to)
     expect(versions).toHaveLength(1)
+  })
+
+  it('lets recents follow the file rather than accumulating its old names', async () => {
+    // Automatic naming renames as a title grows, so the intermediate names
+    // would otherwise pile up in File > Open Recent pointing at nothing.
+    patchSettings({ recentFiles: [at('No.md'), at('Other.md')] })
+    recentDocuments.length = 0
+
+    renameRecent(at('No.md'), at('Notes.md'))
+    expect(getSettings().recentFiles).toEqual([at('Notes.md'), at('Other.md')])
+    expect(recentDocuments).toEqual([at('Other.md'), at('Notes.md')])
   })
 
   it('does not report a false conflict after a rename following a touch', async () => {

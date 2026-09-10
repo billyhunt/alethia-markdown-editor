@@ -36,10 +36,16 @@ describe('opening a folder', () => {
 
   it('reports a folder it cannot read instead of half-adopting it', async () => {
     host.folder.list.mockRejectedValue(new Error('EPERM'))
+    workspace.setState({ recentFolders: ['/vaults/gone', vaultA] })
+    host.recents.listFolders.mockResolvedValue([vaultA])
+
     await adoptFolder('/vaults/gone')
     expect(workspace.getState().folderRoot).toBeNull()
     expect(host.recents.addFolder).not.toHaveBeenCalled()
     expect(host.dialog.showError).toHaveBeenCalled()
+    // And it stops being offered, rather than failing the same way on every
+    // click for the rest of the session.
+    expect(workspace.getState().recentFolders).toEqual([vaultA])
   })
 })
 

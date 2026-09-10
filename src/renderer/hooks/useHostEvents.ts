@@ -37,6 +37,10 @@ export function useHostEvents(): void {
       api.on.fullScreenChanged((isFullScreen) => {
         document.body.classList.toggle('is-fullscreen', isFullScreen)
       }),
+      // Another window opening a folder changes this one's switcher too.
+      api.on.recentFoldersChanged((folders) =>
+        useWorkspaceStore.getState().setRecentFolders(folders),
+      ),
     ]
 
     void api.app.rendererReady().then(async (ready) => {
@@ -45,9 +49,10 @@ export function useHostEvents(): void {
       workspace.setSidebarWidth(ready.settings.sidebar.width)
       workspace.setToolbarVisible(ready.settings.toolbarVisible)
       workspace.setAutosave(ready.settings.autosave)
-      // The switcher should be populated before anything is opened, so a
-      // window with no folder still offers somewhere to go.
-      await refreshRecentFolders()
+      // Deliberately not awaited: it stats every remembered folder, and one
+      // of them on a sleeping network share must not hold up restoring the
+      // document this window was showing.
+      void refreshRecentFolders()
 
       // A path handed to us by Finder or argv wins over restoring last session.
       // This window's own session, rather than one application-wide pair.

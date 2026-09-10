@@ -20,6 +20,7 @@ import {
   clearRecents,
   listRecentFolders,
   listRecents,
+  renameRecent,
 } from './recents.ts'
 import { grantFile, grantRoot, validatePath } from './paths.ts'
 import { takePendingPaths } from './openWith.ts'
@@ -73,9 +74,13 @@ export function registerIpcHandlers(): void {
     writeTextFile(filePath, content, asObject(opts) as WriteFileOptions),
   )
   ipcMain.handle(IPC.fsStat, (_event, filePath: unknown) => statPath(filePath))
-  ipcMain.handle(IPC.fsRename, (_event, filePath: unknown, name: unknown) =>
-    renameFile(filePath, name),
-  )
+  ipcMain.handle(IPC.fsRename, async (_event, filePath: unknown, name: unknown) => {
+    const from = validatePath(filePath)
+    const to = await renameFile(filePath, name)
+    // Recents follow the file rather than accumulating its old names.
+    if (to !== from) renameRecent(from, to)
+    return to
+  })
   ipcMain.handle(IPC.fsCreateFile, (_event, opts: unknown) => createNamedFile(opts))
 
   // --- folder --------------------------------------------------------------

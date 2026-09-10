@@ -22,6 +22,27 @@ describe('documentTitle', () => {
     expect(documentTitle('> Quoted   opening    line')).toBe('Quoted opening line')
   })
 
+  it('treats --- as front matter only when metadata follows it', () => {
+    // A thematic break above a heading is not front matter.
+    expect(documentTitle('---\n# Real title\n---\nBody\n')).toBe('Real title')
+    expect(documentTitle('---\ntags: [a]\n---\n# Real title\n')).toBe('Real title')
+  })
+
+  it('still finds a title under an unterminated code fence', () => {
+    // Otherwise the document would never be filed, and never say why.
+    expect(documentTitle('```js\nconst a = 1\n\n# Actual title\n')).toBe('Actual title')
+  })
+
+  it('ignores plumbing that happens to come first', () => {
+    expect(documentTitle('<!-- markdownlint-disable -->\n# Real title\n')).toBe('Real title')
+    expect(documentTitle('<!--\nlicence\nblock\n-->\n# Real title\n')).toBe('Real title')
+    expect(documentTitle('[1]: https://example.com\n\n# Real title\n')).toBe('Real title')
+  })
+
+  it('reads a leading table row as its cells', () => {
+    expect(documentTitle('| Name | Value |\n|---|---|\n| a | b |\n')).toBe('Name Value')
+  })
+
   it('has nothing to say about an empty buffer', () => {
     expect(documentTitle('')).toBeNull()
     expect(documentTitle('\n   \n\t\n')).toBeNull()
@@ -58,6 +79,21 @@ describe('fileNameForTitle', () => {
   it('gives up when nothing usable survives', () => {
     expect(fileNameForTitle('///')).toBeNull()
     expect(fileNameForTitle('   ')).toBeNull()
+    // Punctuation only, once separators have become dashes.
+    expect(fileNameForTitle('<<>>')).toBeNull()
+  })
+
+  it('removes characters that would misrepresent the name', () => {
+    // U+202E would reverse how the rest of the name renders in Finder.
+    expect(fileNameForTitle('report\u202egnp.md')).toBe('report-gnp.md')
+  })
+
+  it('never cuts a surrogate pair in half', () => {
+    // A lone surrogate is stored as U+FFFD, giving a file whose name can
+    // never match the title it came from.
+    const name = fileNameForTitle('🎉'.repeat(70))!
+    expect(name).not.toContain('\ufffd')
+    expect(Array.from(name.replace(/\.md$/, ''))).toHaveLength(60)
   })
 })
 

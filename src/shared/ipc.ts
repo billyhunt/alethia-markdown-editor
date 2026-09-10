@@ -53,6 +53,7 @@ export const IPC = {
   hostFolderTree: 'host:folderTree',
   hostCloseRequested: 'host:closeRequested',
   hostFullScreenChanged: 'host:fullScreenChanged',
+  hostRecentFoldersChanged: 'host:recentFoldersChanged',
 } as const
 
 /** Commands the editor surface knows how to run. */

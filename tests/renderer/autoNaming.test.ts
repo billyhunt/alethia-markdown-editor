@@ -212,13 +212,42 @@ describe('keeping an automatic name in step with the title', () => {
     expect(docs.getState()).toMatchObject({ namedByTitle: true, mtimeMs: 20 })
   })
 
-  it('keeps the current name when the new one is taken', async () => {
+  it('keeps the current name when the new one is taken, and stops asking', async () => {
     buffer.text = '# Taken\n'
     host.fs.rename.mockRejectedValue(new Error('EEXIST: "Taken.md" already exists'))
 
     await syncAutoName()
     expect(docs.getState().filePath).toBe('/notes/Weekly.md')
     expect(host.dialog.showError).not.toHaveBeenCalled()
+
+    // Asking again every two seconds would achieve nothing, and would claim
+    // the name behind the user's back the moment it came free.
+    host.fs.rename.mockClear()
+    await syncAutoName()
+    expect(host.fs.rename).not.toHaveBeenCalled()
+  })
+
+  it('does not chase the plain name after its own name was numbered', async () => {
+    // The title wanted Taken.md; the folder already had one, so main
+    // numbered it. The document must not spend the rest of the session
+    // trying to rename itself onto the name it did not get.
+    docs.getState().load({ filePath: null, text: '', mtimeMs: null })
+    buffer.text = '# Taken\n'
+    host.fs.createFile.mockResolvedValue({ path: '/notes/Taken 2.md', mtimeMs: 8 })
+    expect(await saveNewByTitle()).toBe(true)
+    expect(docs.getState()).toMatchObject({
+      filePath: '/notes/Taken 2.md',
+      autoNameBase: 'Taken.md',
+    })
+
+    await syncAutoName()
+    expect(host.fs.rename).not.toHaveBeenCalled()
+
+    // A genuinely new title still moves it.
+    buffer.text = '# Taken later\n'
+    host.fs.rename.mockResolvedValue('/notes/Taken later.md')
+    await syncAutoName()
+    expect(host.fs.rename).toHaveBeenCalledWith('/notes/Taken 2.md', 'Taken later.md')
   })
 
   it('stops following the title once the user names the file themselves', async () => {
