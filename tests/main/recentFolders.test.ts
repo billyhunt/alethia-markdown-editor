@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
 const { addRecentFolder, clearRecentFolders, listRecentFolders, grantPersistedRecents } =
   await import('../../src/main/recents.ts')
 const { getSettings, patchSettings } = await import('../../src/main/settings.ts')
-const { assertReadableDir } = await import('../../src/main/paths.ts')
+const { assertReadableDir, grantRoot } = await import('../../src/main/paths.ts')
 
 let vaultA: string
 let vaultB: string
@@ -24,6 +24,10 @@ let vaultB: string
 beforeAll(async () => {
   vaultA = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-a-'))
   vaultB = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-b-'))
+  // Recording a folder no longer grants it, so these stand in for folders
+  // the user opened through the directory dialog.
+  grantRoot(vaultA)
+  grantRoot(vaultB)
 })
 
 afterAll(async () => {
@@ -38,20 +42,23 @@ beforeEach(() => {
 
 describe('recent workspace folders', () => {
   it('keeps the most recently opened folder first, without duplicates', async () => {
-    addRecentFolder(vaultA)
-    addRecentFolder(vaultB)
-    addRecentFolder(vaultA)
+    await addRecentFolder(vaultA)
+    await addRecentFolder(vaultB)
+    await addRecentFolder(vaultA)
     expect(await listRecentFolders()).toEqual([vaultA, vaultB])
   })
 
   it('caps the list so it stays a switcher', async () => {
-    for (let n = 0; n < 15; n += 1) addRecentFolder(path.join(vaultA, `folder-${n}`))
+    for (let n = 0; n < 15; n += 1) await addRecentFolder(path.join(vaultA, `folder-${n}`))
     expect(getSettings().recentFolders).toHaveLength(10)
   })
 
-  it('grants a folder so it can be reopened without a dialog', async () => {
-    addRecentFolder(vaultB)
-    await expect(assertReadableDir(vaultB)).resolves.toBe(vaultB)
+  it('refuses to record, and therefore to grant, a folder never opened', async () => {
+    const unopened = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-unopened-'))
+    await expect(addRecentFolder(unopened)).rejects.toThrow(/EPERM/)
+    expect(getSettings().recentFolders).toEqual([])
+    await expect(assertReadableDir(unopened)).rejects.toThrow(/EPERM/)
+    await fs.rm(unopened, { recursive: true, force: true })
   })
 
   it('re-grants stored folders on the next launch', async () => {
@@ -64,21 +71,22 @@ describe('recent workspace folders', () => {
 
   it('drops folders that have gone away rather than offering them', async () => {
     const doomed = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-gone-'))
-    addRecentFolder(vaultA)
-    addRecentFolder(doomed)
+    grantRoot(doomed)
+    await addRecentFolder(vaultA)
+    await addRecentFolder(doomed)
     await fs.rm(doomed, { recursive: true, force: true })
 
     expect(await listRecentFolders()).toEqual([vaultA])
     expect(getSettings().recentFolders).toEqual([vaultA])
   })
 
-  it('rejects a path that is not absolute', () => {
-    expect(() => addRecentFolder('notes')).toThrow()
-    expect(() => addRecentFolder(42)).toThrow()
+  it('rejects a path that is not absolute', async () => {
+    await expect(addRecentFolder('notes')).rejects.toThrow()
+    await expect(addRecentFolder(42)).rejects.toThrow()
   })
 
   it('clears the whole list', async () => {
-    addRecentFolder(vaultA)
+    await addRecentFolder(vaultA)
     clearRecentFolders()
     expect(await listRecentFolders()).toEqual([])
   })

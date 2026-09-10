@@ -140,6 +140,45 @@ export async function snapshotVersion(filePath: string, content: string): Promis
   }
 }
 
+/**
+ * Follows a renamed document, so its history is not stranded under the name
+ * it used to have. Renaming is no longer only a deliberate act -- an
+ * automatically named file follows its title -- and history that silently
+ * detaches would undermine the whole reason autosaving is safe.
+ *
+ * A destination that already has history is left alone: that history belongs
+ * to whatever used to live at this path, and merging the two would be worse
+ * than leaving the old set where it is.
+ */
+export async function moveVersions(from: string, to: string): Promise<void> {
+  const fromDir = dirFor(from)
+  const toDir = dirFor(to)
+  if (fromDir === toDir) return
+
+  try {
+    await fs.access(toDir)
+    return
+  } catch {
+    /* nothing there yet, which is the case worth handling */
+  }
+  try {
+    await fs.rename(fromDir, toDir)
+  } catch {
+    // No history to move, or it could not be moved; the live file is safe
+    // either way and this must never fail a rename.
+    return
+  }
+  await fs
+    .writeFile(path.join(toDir, 'origin.json'), JSON.stringify({ path: to }, null, 2), { flag: 'w' })
+    .catch(() => undefined)
+
+  const stamp = lastStamp.get(fromDir)
+  if (stamp !== undefined) {
+    lastStamp.set(toDir, stamp)
+    lastStamp.delete(fromDir)
+  }
+}
+
 export async function listVersions(input: unknown): Promise<DocumentVersion[]> {
   const filePath = await assertReadable(input)
   return entriesFor(filePath)

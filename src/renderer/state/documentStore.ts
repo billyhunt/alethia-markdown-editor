@@ -24,6 +24,13 @@ export interface DocumentState {
    * not something to write into the user's folder behind their back.
    */
   autoNameable: boolean
+  /**
+   * Bumped whenever a different document takes over the editor. Work started
+   * against one document and finished after an await checks this before
+   * writing anything back, so a save in flight cannot attach itself to
+   * whatever the user opened in the meantime.
+   */
+  revision: number
 
   load: (doc: {
     filePath: string | null
@@ -56,9 +63,10 @@ export const useDocumentStore = create<DocumentState>((set) => ({
   dirty: false,
   namedByTitle: false,
   autoNameable: true,
+  revision: 0,
 
   load: ({ filePath, text, mtimeMs, lineEnding, namedByTitle, autoNameable }) =>
-    set({
+    set((state) => ({
       filePath,
       savedText: text,
       mtimeMs,
@@ -66,7 +74,8 @@ export const useDocumentStore = create<DocumentState>((set) => ({
       dirty: false,
       namedByTitle: namedByTitle ?? false,
       autoNameable: autoNameable ?? (filePath === null && text === ''),
-    }),
+      revision: state.revision + 1,
+    })),
   markSaved: ({ filePath, text, mtimeMs, namedByTitle }) =>
     set((state) => ({
       filePath,

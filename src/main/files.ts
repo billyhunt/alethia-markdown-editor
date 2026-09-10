@@ -6,13 +6,15 @@ import {
   assertReadable,
   assertReadableDir,
   assertWritable,
+  assertWritableNewFile,
   grantFile,
   grantRoot,
 } from './paths.ts'
-import { snapshotVersion } from './versions.ts'
+import { moveVersions, snapshotVersion } from './versions.ts'
 import { MARKDOWN_EXTENSIONS } from '../shared/markdown.ts'
 import type {
   CreateFileOptions,
+  CreateFileResult,
   LineEnding,
   ReadFileResult,
   StatResult,
@@ -60,6 +62,24 @@ export const isSuppressed = (filePath: string): boolean =>
 
 export function rememberState(filePath: string, content: string, mtimeMs: number): void {
   known.set(filePath, { mtimeMs, size: Buffer.byteLength(content, 'utf8'), hash: hash(content) })
+}
+
+/**
+ * A renamed file is the same file. Without moving its bookkeeping across, the
+ * next save compares the new path against no known state at all and reports a
+ * conflict for a document nobody else touched.
+ */
+function followRename(from: string, to: string): void {
+  const state = known.get(from)
+  if (state) {
+    known.set(to, state)
+    known.delete(from)
+  }
+  const until = suppressUntil.get(from)
+  if (until !== undefined) {
+    suppressUntil.set(to, until)
+    suppressUntil.delete(from)
+  }
 }
 
 export async function readTextFile(input: unknown): Promise<ReadFileResult> {
@@ -147,18 +167,42 @@ export async function renameFile(input: unknown, name: unknown): Promise<string>
   const to = path.join(path.dirname(from), withExt)
   if (to === from) return from
 
-  // Never silently clobber an existing file.
+  // Checked without following a symlink and before any grant: granting a
+  // destination that turns out to be a link would hand out access to whatever
+  // it points at.
   try {
-    await fs.access(to)
+    await fs.lstat(to)
     throw new Error(`EEXIST: "${withExt}" already exists`)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
 
-  // Grant the destination before the rename so the caller can read it back.
+  // Grant the destination before the move so the caller can read it back.
   grantFile(to)
   await assertWritable(to)
-  await fs.rename(from, to)
+
+  // link-then-unlink rather than rename: rename replaces its destination
+  // silently, so two windows whose documents reach the same title at the same
+  // moment could each pass the check above and the loser's file would be
+  // gone. link fails with EEXIST instead, atomically.
+  try {
+    await fs.link(from, to)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(`EEXIST: "${withExt}" already exists`)
+    }
+    // Hard links do not cross devices and are refused on a few filesystems;
+    // fall back to a plain rename, which is still same-directory only.
+    await fs.rename(from, to)
+    followRename(from, to)
+    await moveVersions(from, to)
+    return to
+  }
+  await fs.unlink(from)
+  followRename(from, to)
+  // History is keyed by path, so it has to follow the document or editing a
+  // title would quietly strand every earlier version.
+  await moveVersions(from, to)
   return to
 }
 
@@ -181,16 +225,21 @@ function numbered(base: string, n: number): string {
 }
 
 /**
- * Creates a new, empty markdown file named `name` inside `dir` (or inside the
- * default folder when none is given), without a dialog.
+ * Creates a markdown file named `name`, holding `content`, inside `dir` (or
+ * inside the default folder when none is given), without a dialog.
+ *
+ * Content is written at creation rather than left to a following save: a
+ * two-step create-then-write would leave an empty file behind whenever the
+ * write failed, and would number a fresh name on every retry.
  *
  * `name` is a basename, so it cannot walk out of the directory, and `dir` has
  * to be a directory the user already granted -- a folder they opened, or one
  * this app created for the purpose. An existing file is never overwritten:
- * the name is numbered until it is free, and the file is created exclusively
- * so two windows racing cannot land on the same path.
+ * the name is numbered until it is free, and creation is exclusive, so two
+ * windows racing cannot land on the same path and an entry that appears in
+ * between is never followed.
  */
-export async function createNamedFile(input: unknown): Promise<string> {
+export async function createNamedFile(input: unknown): Promise<CreateFileResult> {
   const opts = (typeof input === 'object' && input !== null ? input : {}) as CreateFileOptions
   if (typeof opts.name !== 'string' || opts.name.trim() === '') {
     throw new TypeError('name must be a non-empty string')
@@ -200,22 +249,29 @@ export async function createNamedFile(input: unknown): Promise<string> {
     throw new Error('EINVAL: name must be a file name, not a path')
   }
 
+  if (opts.content != null && typeof opts.content !== 'string') {
+    throw new TypeError('content must be a string')
+  }
   const dir = opts.dir == null ? await defaultDocumentsDir() : await assertReadableDir(opts.dir)
   const base = withMarkdownExtension(trimmed)
+  const onDisk = fromLf(opts.content ?? '', opts.lineEnding ?? '\n')
 
   for (let n = 1; n <= 100; n += 1) {
     const target = path.join(dir, numbered(base, n))
-    // Granting adds nothing the granted directory did not already cover; it
-    // just lets the write rules (markdown only, never userData) run on the
-    // exact path before anything is created.
-    grantFile(target)
-    await assertWritable(target)
+    // Checked, not granted: see assertWritableNewFile. The grant is issued
+    // only for a file this call actually created.
+    await assertWritableNewFile(target)
     try {
-      await fs.writeFile(target, '', { flag: 'wx' })
-      return target
+      await fs.writeFile(target, onDisk, { flag: 'wx' })
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      continue
     }
+    grantFile(target)
+    const stats = await fs.stat(target)
+    rememberState(target, onDisk, stats.mtimeMs)
+    suppressUntil.set(target, Date.now() + 500)
+    return { path: target, mtimeMs: stats.mtimeMs }
   }
   throw new Error(`EEXIST: too many files named like "${base}"`)
 }

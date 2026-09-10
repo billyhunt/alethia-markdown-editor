@@ -62,6 +62,15 @@ export interface CreateFileOptions {
   dir?: string | null
   /** A basename, not a path. A markdown extension is added if missing. */
   name: string
+  /** Written as part of creating the file, so no empty file can be left. */
+  content?: string
+  lineEnding?: LineEnding
+}
+
+export interface CreateFileResult {
+  /** The path actually created, which may be numbered. */
+  path: string
+  mtimeMs: number
 }
 
 export type SaveChangesChoice = 'save' | 'dontSave' | 'cancel'
@@ -155,10 +164,10 @@ export interface MarkdownApi {
      */
     rename(path: string, name: string): Promise<string>
     /**
-     * Creates a new empty markdown file and grants it, numbering the name if
-     * it is taken. Resolves the absolute path actually created.
+     * Creates a markdown file holding `content` and grants it, numbering the
+     * name if it is taken. Never overwrites; creation is exclusive.
      */
-    createFile(opts: CreateFileOptions): Promise<string>
+    createFile(opts: CreateFileOptions): Promise<CreateFileResult>
   }
 
   folder: {

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import { app } from 'electron'
 import { getSettings, patchSettings } from './settings.ts'
-import { grantFile, grantRoot, validatePath } from './paths.ts'
+import { assertReadable, assertReadableDir, grantFile, grantRoot } from './paths.ts'
 import { buildApplicationMenu } from './menu.ts'
 
 const MAX_RECENTS = 20
@@ -16,17 +16,20 @@ export function listRecents(): string[] {
 /**
  * Kept in two places: the native File > Open Recent / Dock menu, and our own
  * settings for the welcome screen.
+ *
+ * Recording a path must never be a way to acquire access to it. The path has
+ * to be granted already -- by a dialog, an open-file event, argv, a
+ * validated drop, or a file this app created -- so a compromised renderer
+ * cannot nominate an arbitrary file and have it become readable.
  */
-export function addRecent(input: unknown): void {
-  const filePath = validatePath(input)
+export async function addRecent(input: unknown): Promise<void> {
+  const filePath = await assertReadable(input)
   const next = [filePath, ...getSettings().recentFiles.filter((p) => p !== filePath)].slice(
     0,
     MAX_RECENTS,
   )
   patchSettings({ recentFiles: next })
   app.addRecentDocument(filePath)
-  // A file we previously opened stays openable across launches.
-  grantFile(filePath)
 }
 
 export function clearRecents(): void {
@@ -55,15 +58,19 @@ export async function listRecentFolders(): Promise<string[]> {
   return alive
 }
 
-export function addRecentFolder(input: unknown): void {
-  const dirPath = validatePath(input)
+/**
+ * As with files, recording a folder grants nothing. Only a folder already
+ * granted -- opened through the directory dialog, or dropped and validated --
+ * can be remembered, so this endpoint cannot be used to hand the renderer a
+ * whole subtree it was never given.
+ */
+export async function addRecentFolder(input: unknown): Promise<void> {
+  const dirPath = await assertReadableDir(input)
   const next = [dirPath, ...getSettings().recentFolders.filter((p) => p !== dirPath)].slice(
     0,
     MAX_RECENT_FOLDERS,
   )
   patchSettings({ recentFolders: next })
-  // A folder we previously opened stays openable across launches.
-  grantRoot(dirPath)
   // The File menu carries the same list, so it has to follow.
   buildApplicationMenu()
 }

@@ -1,5 +1,6 @@
 import { api, unwrapIpcError } from '../api.ts'
 import { fileNameForDocument } from '../../shared/titles.ts'
+import type { CreateFileResult } from '../../shared/api'
 import { editorController } from '../editor/editorController.ts'
 import { documentName, useDocumentStore } from '../state/documentStore.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
@@ -21,8 +22,14 @@ export async function ensureClosable(): Promise<boolean> {
 
 async function adoptFile(filePath: string): Promise<void> {
   const { content, mtimeMs, lineEnding } = await api.fs.readFile(filePath)
+  // Re-reading the same file is a reload, not a different document, so it
+  // keeps following its title. Opening a different one starts fresh.
+  const previous = useDocumentStore.getState()
+  const stillOurs = previous.filePath === filePath && previous.namedByTitle
   editorController.setDocument(content)
-  useDocumentStore.getState().load({ filePath, text: content, mtimeMs, lineEnding })
+  useDocumentStore
+    .getState()
+    .load({ filePath, text: content, mtimeMs, lineEnding, namedByTitle: stillOurs })
   await api.recents.add(filePath)
   await api.document.watch(filePath)
   useWorkspaceStore.getState().setNotice(null)
@@ -131,22 +138,43 @@ export async function saveAs(): Promise<boolean> {
  * pause tries again.
  */
 export async function saveNewByTitle(): Promise<boolean> {
-  const { filePath, autoNameable } = useDocumentStore.getState()
+  const { filePath, autoNameable, lineEnding, revision } = useDocumentStore.getState()
   if (filePath || !autoNameable) return false
-  const name = fileNameForDocument(editorController.getText())
+  const text = editorController.getText()
+  const name = fileNameForDocument(text)
   if (!name) return false
 
-  let created: string
+  let created: CreateFileResult
   try {
-    created = await api.fs.createFile({ dir: useWorkspaceStore.getState().folderRoot, name })
+    // The text goes in as the file is created, so a failure cannot leave an
+    // empty file behind and a retry cannot leave a numbered trail of them.
+    created = await api.fs.createFile({
+      dir: useWorkspaceStore.getState().folderRoot,
+      name,
+      content: text,
+      lineEnding,
+    })
   } catch {
     // Saving on the user's behalf must never interrupt them. A failure here
     // leaves the buffer untitled, exactly as it was.
     return false
   }
-  const saved = await writeTo(created, null, true)
-  if (saved) await refreshFolder()
-  return saved
+  await refreshFolder()
+
+  const doc = useDocumentStore.getState()
+  if (doc.revision !== revision || doc.filePath !== null) {
+    // Something else took the editor while the file was being written. The
+    // file holds the text it was created from, so nothing is lost -- but
+    // this buffer is no longer that document and must not claim its path.
+    return false
+  }
+  doc.markSaved({ filePath: created.path, text, mtimeMs: created.mtimeMs, namedByTitle: true })
+  // Typing during the write leaves the buffer ahead of what was saved.
+  doc.setDirty(editorController.getText() !== text)
+  await api.recents.add(created.path)
+  await api.document.watch(created.path)
+  useWorkspaceStore.getState().setNotice(null)
+  return true
 }
 
 /**
@@ -157,16 +185,24 @@ export async function saveNewByTitle(): Promise<boolean> {
  * leaves the current name in place.
  */
 export async function syncAutoName(): Promise<void> {
-  const { namedByTitle, filePath } = useDocumentStore.getState()
+  const { namedByTitle, filePath, revision } = useDocumentStore.getState()
   if (!namedByTitle || !filePath) return
   const wanted = fileNameForDocument(editorController.getText())
   if (!wanted || wanted === documentName(filePath)) return
 
   try {
     const next = await api.fs.rename(filePath, wanted)
+    const doc = useDocumentStore.getState()
+    // The document may have been closed or replaced while the rename was in
+    // flight. The file on disk followed its title either way; the editor is
+    // simply no longer showing it.
+    if (doc.revision !== revision || doc.filePath !== filePath) {
+      await refreshFolder()
+      return
+    }
     // Only the identity moved: the buffer, its dirty flag and its baseline
     // are unchanged, and the save that follows writes to the new path.
-    useDocumentStore.getState().setPath(next, true)
+    doc.setPath(next, true)
     await api.recents.add(next)
     await api.document.watch(next)
     await refreshFolder()
@@ -181,14 +217,21 @@ async function writeTo(
   namedByTitle?: boolean,
 ): Promise<boolean> {
   const text = editorController.getText()
-  const { lineEnding } = useDocumentStore.getState()
+  const { lineEnding, revision } = useDocumentStore.getState()
   try {
     const result = await api.fs.writeFile(filePath, text, { expectedMtimeMs, lineEnding })
     if (!result.ok) {
       showConflictNotice(filePath, text)
       return false
     }
-    useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs, namedByTitle })
+    const doc = useDocumentStore.getState()
+    // The write succeeded, but if the editor moved on to another document
+    // while it was in flight, marking that one saved would give it this
+    // file's path and hide its unsaved state.
+    if (doc.revision !== revision) return true
+    doc.markSaved({ filePath, text, mtimeMs: result.mtimeMs, namedByTitle })
+    // Typing during the write leaves the buffer ahead of what was saved.
+    doc.setDirty(editorController.getText() !== text)
     await api.recents.add(filePath)
     await api.document.watch(filePath)
     useWorkspaceStore.getState().setNotice(null)
@@ -256,7 +299,10 @@ export function forgetTrashedFile(filePath: string): void {
     text: '',
     mtimeMs: null,
     lineEnding: doc.lineEnding,
-    autoNameable: false,
+    // Only the rescued edits are ineligible. An empty buffer left behind by
+    // trashing a file is just a new document, and writing in it should file
+    // itself like any other.
+    autoNameable: !keepEdits,
   })
   doc.setDirty(keepEdits)
   void api.document.unwatch()

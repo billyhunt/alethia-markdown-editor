@@ -26,7 +26,15 @@ export async function handleFileChange(event: FileChangeEvent): Promise<void> {
   if (!doc.dirty) {
     const { content, mtimeMs, lineEnding } = await api.fs.readFile(event.path)
     editorController.setDocument(content)
-    doc.load({ filePath: event.path, text: content, mtimeMs, lineEnding })
+    // Reloading the same file is not a change of document, so an
+    // automatically named one keeps following its title.
+    doc.load({
+      filePath: event.path,
+      text: content,
+      mtimeMs,
+      lineEnding,
+      namedByTitle: doc.namedByTitle,
+    })
     workspace.setNotice({
       message: 'Reloaded from disk.',
       actions: [{ label: 'Dismiss', run: () => workspace.setNotice(null) }],
@@ -45,10 +53,15 @@ export async function handleFileChange(event: FileChangeEvent): Promise<void> {
         label: 'Reload (discard my changes)',
         run: () => {
           void api.fs.readFile(event.path).then(({ content, mtimeMs, lineEnding }) => {
+            const current = useDocumentStore.getState()
             editorController.setDocument(content)
-            useDocumentStore
-              .getState()
-              .load({ filePath: event.path, text: content, mtimeMs, lineEnding })
+            current.load({
+              filePath: event.path,
+              text: content,
+              mtimeMs,
+              lineEnding,
+              namedByTitle: current.namedByTitle,
+            })
             useWorkspaceStore.getState().setNotice(null)
           })
         },
