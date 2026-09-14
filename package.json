@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "package": "npm run build && electron-builder --mac --dir",
+    "verify:package": "node scripts/verify-package.mjs",
     "dist": "npm run build && electron-builder --mac dmg"
   },
   "dependencies": {
