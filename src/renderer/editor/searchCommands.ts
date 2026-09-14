@@ -64,11 +64,23 @@ const useSelectionForFind: Command = (view) => {
   const { from, to } = view.state.selection.main
   if (from === to) return openSearchPanel(view)
 
+  // Read the query before opening: opening reseeds it from the selection.
   const current = getSearchQuery(view.state)
+  const selected = view.state.sliceDoc(from, to)
+
+  // Opening the panel runs CodeMirror's own `defaultQuery`, which keeps the
+  // flags but drops the replacement, so the intended query has to be
+  // dispatched *after* the panel exists or it would be overwritten -- and a
+  // silently emptied replacement turns the next Replace into a deletion.
+  const opened = openSearchPanel(view)
   view.dispatch({
     effects: setSearchQuery.of(
       new SearchQuery({
-        search: view.state.sliceDoc(from, to),
+        // Outside literal mode a query stores newlines as the two-character
+        // escape `\n`, which is also what CodeMirror's own defaultQuery
+        // writes. A raw newline would survive here but be stripped the
+        // moment the panel's single-line input committed its value back.
+        search: current.literal ? selected : selected.replace(/\n/g, '\\n'),
         // Everything except the search text is the user's existing choice.
         caseSensitive: current.caseSensitive,
         literal: current.literal,
@@ -78,7 +90,44 @@ const useSelectionForFind: Command = (view) => {
       }),
     ),
   })
-  return openSearchPanel(view)
+  return opened
+}
+
+/** What a menu-driven search command should do about focus. */
+export type FocusPlan = 'ignore' | 'keep-focus' | 'take-focus'
+
+/**
+ * `isContentEditable` is the right property but is unimplemented in jsdom,
+ * so the attribute is checked too -- which is also the more explicit read of
+ * what the markup asked for.
+ */
+const isEditableHost = (element: Element): boolean => {
+  if (!(element instanceof HTMLElement)) return false
+  if (element.isContentEditable) return true
+  const attribute = element.getAttribute('contenteditable')
+  return attribute === '' || attribute === 'true'
+}
+
+const isTextEntry = (element: Element | null): boolean =>
+  element instanceof HTMLInputElement ||
+  element instanceof HTMLTextAreaElement ||
+  (element !== null && isEditableHost(element))
+
+/**
+ * Menu accelerators are app-global: Cmd+F and Cmd+G fire wherever focus sits,
+ * including the search panel's own query field and the sidebar's rename
+ * field. Taking focus unconditionally would move the caret into the document
+ * mid-query, so the next keystroke would overwrite the selected match instead
+ * of editing the search term, and would abandon a rename in progress.
+ */
+export function searchFocusPlan(view: EditorView, active: Element | null): FocusPlan {
+  // The editor's DOM contains the search panel, so a caret in the query or
+  // replace field is already where it should be.
+  if (active && view.dom.contains(active)) return 'keep-focus'
+  // Somewhere else that takes typing: leave it alone entirely, matching how
+  // undo/redo already defer to native fields.
+  if (isTextEntry(active)) return 'ignore'
+  return 'take-focus'
 }
 
 export const SEARCH_COMMANDS: Record<SearchCommand, Command> = {

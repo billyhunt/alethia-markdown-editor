@@ -2,7 +2,7 @@ import { EditorView } from '@codemirror/view'
 import { EditorSelection } from '@codemirror/state'
 import { createEditorState } from './createEditor.ts'
 import { EDITOR_COMMANDS } from './commands.ts'
-import { SEARCH_COMMANDS } from './searchCommands.ts'
+import { SEARCH_COMMANDS, searchFocusPlan } from './searchCommands.ts'
 import { focusMode, modesCompartment, typewriterMode } from './extensions/modes.ts'
 import type { EditorCommand, SearchCommand } from '../../shared/ipc.ts'
 
@@ -94,14 +94,18 @@ class EditorController {
   }
 
   /**
-   * Runs a search command. Focus moves to the editor first, because Find
-   * from the menu while a sidebar field has focus should still search the
-   * document.
+   * Runs a search command from the menu. Focus is only taken when it is not
+   * already inside the editor (which includes the search panel's own fields)
+   * and not in some other field that is being typed into; see
+   * `searchFocusPlan`.
    */
   search(command: SearchCommand): boolean {
     const view = this.view
     if (!view) return false
-    view.focus()
+
+    const plan = searchFocusPlan(view, document.activeElement)
+    if (plan === 'ignore') return false
+    if (plan === 'take-focus') view.focus()
     return SEARCH_COMMANDS[command](view)
   }
 

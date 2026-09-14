@@ -3,7 +3,7 @@ import { EditorSelection } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { getSearchQuery, searchPanelOpen, setSearchQuery, SearchQuery } from '@codemirror/search'
 import { createEditorState } from '../../src/renderer/editor/createEditor.ts'
-import { SEARCH_COMMANDS } from '../../src/renderer/editor/searchCommands.ts'
+import { SEARCH_COMMANDS, searchFocusPlan } from '../../src/renderer/editor/searchCommands.ts'
 
 const DOC = 'alpha beta\nbeta gamma\ngamma alpha'
 
@@ -70,6 +70,42 @@ describe('SEARCH_COMMANDS', () => {
     expect(query.regexp).toBe(true)
   })
 
+  it('keeps an existing replacement when seeding from the selection', () => {
+    const v = mount()
+    v.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: 'x', replace: 'gamma' })) })
+    v.dispatch({ selection: EditorSelection.range(6, 10) })
+    SEARCH_COMMANDS.useSelectionForFind(v)
+
+    // Opening the panel reseeds the query through CodeMirror's own
+    // defaultQuery, which keeps the flags but drops the replacement. Setting
+    // the query before opening therefore loses it, and the next Replace would
+    // delete the match instead of substituting.
+    expect(getSearchQuery(v.state).search).toBe('beta')
+    expect(getSearchQuery(v.state).replace).toBe('gamma')
+  })
+
+  it('escapes newlines in a multi-line selection the way CodeMirror does', () => {
+    // Over 100 characters, which is the point where CodeMirror stops seeding
+    // (and escaping) from the selection for us.
+    const block = `${'a'.repeat(60)}\n${'b'.repeat(60)}`
+    const doc = `head\n${block}\ntail`
+    const v = mount(doc)
+    const from = doc.indexOf(block)
+    v.dispatch({ selection: EditorSelection.range(from, from + block.length) })
+    SEARCH_COMMANDS.useSelectionForFind(v)
+
+    // A raw newline survives in the query object but is stripped the moment
+    // the panel's single-line input commits its value back, silently changing
+    // what is being searched for.
+    const query = getSearchQuery(v.state)
+    expect(query.literal).toBe(false)
+    expect(query.search).not.toContain('\n')
+    expect(query.search).toContain('\\n')
+    // The escape is the query's encoding of a newline, so it still matches
+    // the two real lines.
+    expect(query.unquoted).toContain('\n')
+  })
+
   it('opens the panel without a query when nothing is selected', () => {
     const v = mount()
     v.dispatch({ selection: EditorSelection.cursor(3) })
@@ -102,5 +138,47 @@ describe('SEARCH_COMMANDS', () => {
 
     expect(SEARCH_COMMANDS.findNext(v)).toBe(true)
     expect(v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to)).toBe('**bold**')
+  })
+})
+
+describe('searchFocusPlan', () => {
+  it('leaves focus alone when it is already inside the editor', () => {
+    const v = mount()
+    SEARCH_COMMANDS.find(v)
+    const queryField = v.dom.querySelector('input[name="search"]')
+
+    // Find Next from the menu while the query is being typed must not pull
+    // the caret into the document, or the next keystroke would overwrite the
+    // selected match instead of editing the search term.
+    expect(searchFocusPlan(v, queryField)).toBe('keep-focus')
+    expect(searchFocusPlan(v, v.contentDOM)).toBe('keep-focus')
+  })
+
+  it('ignores the command while another field is being typed into', () => {
+    const v = mount()
+    const rename = document.createElement('input')
+    document.body.append(rename)
+
+    // The sidebar's rename field, mid-rename. Menu accelerators are global,
+    // so Cmd+F arrives here too; abandoning the rename would be worse than
+    // doing nothing.
+    expect(searchFocusPlan(v, rename)).toBe('ignore')
+
+    const note = document.createElement('div')
+    // Set through the attribute: jsdom implements neither the
+    // `contentEditable` setter nor `isContentEditable`.
+    note.setAttribute('contenteditable', 'true')
+    document.body.append(note)
+    expect(searchFocusPlan(v, note)).toBe('ignore')
+  })
+
+  it('takes focus from anywhere that is not a text field', () => {
+    const v = mount()
+    const button = document.createElement('button')
+    document.body.append(button)
+
+    expect(searchFocusPlan(v, button)).toBe('take-focus')
+    expect(searchFocusPlan(v, document.body)).toBe('take-focus')
+    expect(searchFocusPlan(v, null)).toBe('take-focus')
   })
 })
