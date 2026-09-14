@@ -1,7 +1,8 @@
 import { editorController } from '../editor/editorController.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import { api } from '../api.ts'
-import type { EditorCommand, HostCommand, SearchCommand } from '../../shared/ipc.ts'
+import { isSearchCommand } from '../editor/searchCommands.ts'
+import type { EditorCommand, HostCommand } from '../../shared/ipc.ts'
 import {
   closeDocument,
   newDocument,
@@ -36,7 +37,10 @@ export function dispatchHostCommand(command: HostCommand): void {
   }
 
   if (command.startsWith('edit:')) {
-    editorController.search(command.slice('edit:'.length) as SearchCommand)
+    const name = command.slice('edit:'.length)
+    // Undo and redo are handled above; anything else here has to be a search
+    // command, and an unknown one is ignored rather than thrown.
+    if (isSearchCommand(name)) editorController.search(name)
     return
   }
 

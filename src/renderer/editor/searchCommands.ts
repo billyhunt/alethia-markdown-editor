@@ -45,15 +45,14 @@ const find: Command = (view) => {
 }
 
 /**
- * Same panel as Find -- CodeMirror has one panel carrying both fields -- but
- * the caret lands in the replace input, which is the only thing that
- * distinguishes the two menu items.
+ * CodeMirror has a single panel and it always carries the replace field, so
+ * there is nothing for this to open that Find does not. Focus goes to the
+ * search field, as it does in TextEdit, Xcode and Pages: you know what to
+ * look for before you know what to put in its place. The separate menu item
+ * exists so that replace is discoverable at all, since nothing else in the
+ * app mentions it.
  */
-const findAndReplace: Command = (view) => {
-  const opened = openSearchPanel(view)
-  focusField(view, 'input[name="replace"]')
-  return opened
-}
+const findAndReplace: Command = find
 
 /**
  * Seeds the query from the selection, the way Xcode and TextEdit do, so
@@ -137,3 +136,13 @@ export const SEARCH_COMMANDS: Record<SearchCommand, Command> = {
   findPrevious,
   useSelectionForFind,
 }
+
+/**
+ * Narrows the tail of an `edit:` host command. The dispatcher reaches this
+ * branch by prefix, and `edit:undo` and `edit:redo` are only excluded by an
+ * earlier branch, so a future `edit:` command that is not a search command
+ * would otherwise look up `undefined` in the table and throw inside the IPC
+ * callback instead of being ignored.
+ */
+export const isSearchCommand = (value: string): value is SearchCommand =>
+  Object.hasOwn(SEARCH_COMMANDS, value)

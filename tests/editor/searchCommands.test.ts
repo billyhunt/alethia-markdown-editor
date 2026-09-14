@@ -31,13 +31,16 @@ describe('SEARCH_COMMANDS', () => {
     expect(searchPanelOpen(v.state)).toBe(true)
   })
 
-  it('puts focus in the replace field on find and replace', () => {
+  it('shows the replace field and focuses the search field on find and replace', () => {
     const v = mount()
     SEARCH_COMMANDS.findReplace(v)
 
-    const focused = document.activeElement
-    expect(focused).toBeInstanceOf(HTMLInputElement)
-    expect((focused as HTMLInputElement).name).toBe('replace')
+    // CodeMirror has one panel and it always carries replace, so the item
+    // exists for discoverability. Focus follows the platform: TextEdit and
+    // Xcode both put the caret in the search field here, and focusing replace
+    // would send the first thing typed to the wrong place.
+    expect(v.dom.querySelector('.cm-search input[name="replace"]')).not.toBeNull()
+    expect((document.activeElement as HTMLInputElement | null)?.name).toBe('search')
   })
 
   it('leaves focus in the search field on plain find', () => {
@@ -54,6 +57,18 @@ describe('SEARCH_COMMANDS', () => {
     v.dispatch({ selection: EditorSelection.range(6, 10) })
     expect(SEARCH_COMMANDS.useSelectionForFind(v)).toBe(true)
     expect(getSearchQuery(v.state).search).toBe('beta')
+  })
+
+  it('seeds a selection longer than CodeMirror will take on its own', () => {
+    // CodeMirror's defaultQuery ignores a selection over 100 characters, so
+    // the short case above passes even with this command's body removed.
+    // Only our own dispatch can put this text in the query.
+    const long = 'x'.repeat(150)
+    const v = mount(`${long}\ntail`)
+    v.dispatch({ selection: EditorSelection.range(0, long.length) })
+    SEARCH_COMMANDS.useSelectionForFind(v)
+
+    expect(getSearchQuery(v.state).search).toBe(long)
   })
 
   it('keeps the existing query options when seeding from the selection', () => {

@@ -120,6 +120,10 @@ export function buildApplicationMenu(): void {
           label: 'Find',
           submenu: [
             cmd('Find…', 'edit:find', 'CmdOrCtrl+F'),
+            // CodeMirror has a single panel and it always carries the replace
+            // field, so this opens the same thing Find does. It is here
+            // because nothing else in the app tells anyone that replace
+            // exists.
             cmd('Find and Replace…', 'edit:findReplace', 'Alt+CmdOrCtrl+F'),
             cmd('Find Next', 'edit:findNext', 'CmdOrCtrl+G'),
             cmd('Find Previous', 'edit:findPrevious', 'Shift+CmdOrCtrl+G'),
