@@ -6,7 +6,7 @@ import { getSettings, patchSettings } from './settings.ts'
 import type { HostCommand } from '../shared/ipc.ts'
 import type { ThemePreference } from '../shared/settings.ts'
 
-const REPO_URL = 'https://github.com/'
+export const REPO_URL = 'https://github.com/billyhunt/alethia-markdown-editor'
 
 /**
  * Menu items stay permanently enabled and the renderer no-ops when there is
