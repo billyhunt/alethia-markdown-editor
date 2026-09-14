@@ -1,7 +1,7 @@
 import { editorController } from '../editor/editorController.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import { api } from '../api.ts'
-import type { EditorCommand, HostCommand } from '../../shared/ipc.ts'
+import type { EditorCommand, HostCommand, SearchCommand } from '../../shared/ipc.ts'
 import {
   closeDocument,
   newDocument,
@@ -32,6 +32,11 @@ export function dispatchHostCommand(command: HostCommand): void {
       return
     }
     editorController.exec(action)
+    return
+  }
+
+  if (command.startsWith('edit:')) {
+    editorController.search(command.slice('edit:'.length) as SearchCommand)
     return
   }
 

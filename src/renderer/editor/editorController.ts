@@ -2,8 +2,9 @@ import { EditorView } from '@codemirror/view'
 import { EditorSelection } from '@codemirror/state'
 import { createEditorState } from './createEditor.ts'
 import { EDITOR_COMMANDS } from './commands.ts'
+import { SEARCH_COMMANDS } from './searchCommands.ts'
 import { focusMode, modesCompartment, typewriterMode } from './extensions/modes.ts'
-import type { EditorCommand } from '../../shared/ipc.ts'
+import type { EditorCommand, SearchCommand } from '../../shared/ipc.ts'
 
 /**
  * Owns the single EditorView. React mounts it once and never re-renders it --
@@ -90,6 +91,18 @@ class EditorController {
     if (!view) return false
     view.focus()
     return EDITOR_COMMANDS[command]({ state: view.state, dispatch: view.dispatch })
+  }
+
+  /**
+   * Runs a search command. Focus moves to the editor first, because Find
+   * from the menu while a sidebar field has focus should still search the
+   * document.
+   */
+  search(command: SearchCommand): boolean {
+    const view = this.view
+    if (!view) return false
+    view.focus()
+    return SEARCH_COMMANDS[command](view)
   }
 
   /** Swaps focus/typewriter modes without rebuilding the document state. */
