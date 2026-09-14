@@ -45,9 +45,12 @@ const failedImages = new Set<string>()
 /** Marks a transaction whose only purpose is to redraw after an image failed. */
 export const imageFailed = Annotation.define<string>()
 
-export const hasImageFailed = (url: string): boolean => failedImages.has(url)
-
-/** Test hook; production code never forgets a failure within a session. */
+/**
+ * Forgets every recorded failure. Called when the document or its path
+ * changes: a file that was missing may exist now, and reopening the note is
+ * how a user retries. Within one document's life a failure is not retried,
+ * so a missing image does not hit the disk on every keystroke.
+ */
 export const forgetImageFailures = (): void => failedImages.clear()
 
 const PROBLEM_TEXT: Record<ImageProblem, string> = {

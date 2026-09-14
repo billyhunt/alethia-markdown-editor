@@ -4,6 +4,7 @@ import { createEditorState } from './createEditor.ts'
 import { EDITOR_COMMANDS } from './commands.ts'
 import { focusMode, modesCompartment, typewriterMode } from './extensions/modes.ts'
 import { documentPath, documentPathCompartment } from './extensions/documentPath.ts'
+import { forgetImageFailures } from './widgets/ImageWidget.ts'
 import type { EditorCommand } from '../../shared/ipc.ts'
 
 /**
@@ -20,9 +21,15 @@ class EditorController {
   mount(parent: HTMLElement): () => void {
     this.view?.destroy()
     this.view = new EditorView({
-      state: createEditorState('', EditorView.updateListener.of((update) => {
-        if (update.docChanged) this.emit(update.state.doc.toString())
-      })),
+      state: createEditorState(
+        '',
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) this.emit(update.state.doc.toString())
+        }),
+        // A remount must not forget where the document lives, or every image
+        // becomes a "save the document" placeholder until the path changes.
+        { filePath: this.filePath },
+      ),
       parent,
     })
     return () => {
@@ -39,6 +46,9 @@ class EditorController {
   setDocument(text: string): void {
     const view = this.view
     if (!view) return
+    // A fresh document is a fresh start for images too: a file that was
+    // missing last time may exist now, and reopening is how a user retries.
+    forgetImageFailures()
     view.setState(
       createEditorState(
         text,
@@ -109,6 +119,7 @@ class EditorController {
     this.filePath = filePath
     const view = this.view
     if (!view || view.state.facet(documentPath) === filePath) return
+    forgetImageFailures()
     view.dispatch({
       effects: documentPathCompartment.reconfigure(documentPath.of(filePath)),
     })

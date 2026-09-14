@@ -257,6 +257,12 @@ export function buildDecorations(view: EditorView): Built {
             // The whole `![alt](src)` becomes the picture when the caret is
             // away; on the line, the source shows and can be edited.
             if (active(node.from, node.to)) return true
+            // Alt text may legally span lines. A replacement across a line
+            // break is forbidden from a ViewPlugin (CodeMirror throws), so
+            // such an image stays as source; it is rare and still editable.
+            if (state.doc.lineAt(node.from).number !== state.doc.lineAt(node.to).number) {
+              return true
+            }
             const url = firstNamed(node, 'URL')
             if (!url) return true
             const marks = childrenNamed(node, 'LinkMark')

@@ -9,11 +9,19 @@ const host = vi.hoisted(() => ({
   recents: { add: vi.fn() },
 }))
 vi.mock('../../src/renderer/api.ts', () => ({ api: host, unwrapIpcError: String }))
-const buffer = vi.hoisted(() => ({ text: '' }))
+const buffer = vi.hoisted(() => ({
+  text: '',
+  filePath: null as string | null,
+  pathWhenTextSet: undefined as string | null | undefined,
+}))
 vi.mock('../../src/renderer/editor/editorController.ts', () => ({
   editorController: {
     getText: () => buffer.text,
-    setDocument: (text: string) => { buffer.text = text },
+    setDocument: (text: string) => {
+      buffer.text = text
+      buffer.pathWhenTextSet = buffer.filePath
+    },
+    setFilePath: (filePath: string | null) => { buffer.filePath = filePath },
   },
 }))
 
@@ -50,6 +58,10 @@ describe('intentional deletion of the open file', () => {
     expect(host.dialog.confirmSaveChanges).not.toHaveBeenCalled()
     expect(docs.getState().filePath).toBe(next)
     expect(buffer.text).toBe('# Next\n')
+    // The editor builds image URLs from the path during setDocument, so the
+    // path has to be known first; otherwise the new note's images are briefly
+    // requested against the previous note's folder.
+    expect(buffer.pathWhenTextSet).toBe(next)
   })
 
   it('preserves edits made just before deletion, even before the dirty flag updates', async () => {

@@ -10,7 +10,7 @@ import {
 
 let view: EditorView | null = null
 
-/** requestMeasure flushes on an animation frame; jsdom implements rAF. */
+/** The failure redraw is deferred by requestAnimationFrame; jsdom implements it. */
 const nextFrame = (): Promise<void> =>
   new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 
@@ -151,12 +151,45 @@ describe('image rendering', () => {
     expect(v.contentDOM.querySelector('.cm-md-link')).not.toBeNull()
   })
 
-  it('does not leave the URL decorated as a clickable link under the image', () => {
-    // The Image case returns false so its children are not visited; if it
-    // returned true the URL child would get the link mark and a stray
-    // data-href would sit inside a replaced range.
-    const v = mount(DOC, '/notes/n.md')
+  it('leaves a multi-line image as source rather than crashing the view', () => {
+    // Alt text may legally span lines. Replacing across a line break from a
+    // ViewPlugin makes CodeMirror throw "Decorations that replace line breaks
+    // may not be specified via plugins", which would take the editor down on
+    // a valid document.
+    const doc = 'Before\n\n![first\nsecond](photo.png)\n\nAfter'
+    const v = mount(doc, '/notes/n.md')
+    expect(() => v.dispatch({ selection: EditorSelection.cursor(0) })).not.toThrow()
+    expect(v.contentDOM.querySelector('img.cm-md-image')).toBeNull()
+    expect(v.contentDOM.textContent).toContain('![first')
+    expect(v.state.doc.toString()).toBe(doc)
+  })
+
+  it('replaces exactly the image node and nothing around it', () => {
+    const v = mount('a ![x](p.png) b', '/n.md')
     v.dispatch({ selection: EditorSelection.cursor(0) })
-    expect(v.contentDOM.querySelector('.cm-md-link')).toBeNull()
+    const line = v.contentDOM.querySelector('.cm-line')
+    expect(line?.textContent).toBe('a  b')
+    expect(line?.querySelectorAll('img.cm-md-image')).toHaveLength(1)
+  })
+})
+
+describe('editorController and the document path', () => {
+  it('keeps the document path across a remount', async () => {
+    const { editorController } = await import('../../src/renderer/editor/editorController.ts')
+    const parent = document.createElement('div')
+    document.body.append(parent)
+    let unmount = editorController.mount(parent)
+    editorController.setFilePath('/notes/n.md')
+    editorController.setDocument(DOC)
+
+    // Remount, as React does in StrictMode and on layout changes. The path
+    // was known; forgetting it turns every image into a "save the document"
+    // placeholder until the path happens to change.
+    unmount()
+    unmount = editorController.mount(parent)
+    // Asserted before any setDocument: that call rebuilds state with the
+    // controller's path anyway, and would hide a mount that forgot it.
+    expect(editorController.getState()?.facet(documentPath)).toBe('/notes/n.md')
+    unmount()
   })
 })

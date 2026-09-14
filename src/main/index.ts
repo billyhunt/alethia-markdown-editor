@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { app, BrowserWindow, nativeImage } from 'electron'
-import { getQuitting, persistSessions, restoreWindows, setQuitting } from './windows.ts'
+import { documentShownBy, getQuitting, persistSessions, restoreWindows, setQuitting } from './windows.ts'
 import { registerIpcHandlers } from './ipc.ts'
 import { hardenSession } from './security.ts'
 import { buildApplicationMenu } from './menu.ts'
@@ -9,7 +9,7 @@ import { grantPersistedRecents } from './recents.ts'
 import { applyTheme } from './theme.ts'
 import { enqueueArgv, enqueuePath } from './openWith.ts'
 import { closeAllWatchers } from './watcher.ts'
-import { installImageProtocol, registerImageScheme } from './images.ts'
+import { installImageProtocol, registerImageScheme, setOpenDocumentLookup } from './images.ts'
 
 // Registered at module top level: Finder fires open-file before 'ready', and
 // a listener attached later would miss it entirely.
@@ -49,6 +49,7 @@ if (!app.requestSingleInstanceLock()) {
     grantPersistedRecents()
     applyTheme(getSettings().theme)
     hardenSession()
+    setOpenDocumentLookup(documentShownBy)
     installImageProtocol()
     registerIpcHandlers()
     buildApplicationMenu()

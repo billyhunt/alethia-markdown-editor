@@ -3,11 +3,12 @@ import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-// images.ts imports electron for the protocol handler; the resolver under
-// test never touches it.
-vi.mock('electron', () => ({ net: {}, protocol: {}, app: { getPath: () => '/tmp' } }))
+// images.ts imports electron for the protocol handler; nothing under test
+// touches it.
+vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] }, protocol: {} }))
 
-const { resolveImageRequest, MAX_IMAGE_BYTES } = await import('../../src/main/images.ts')
+const { MAX_IMAGE_BYTES, destinationToPath, resolveImageRequest, serveImage, statusForError } =
+  await import('../../src/main/images.ts')
 const { imageRequestUrl } = await import('../../src/shared/images.ts')
 const { PathPermissionError } = await import('../../src/main/paths.ts')
 
@@ -15,14 +16,21 @@ let root = ''
 let notes = ''
 let doc = ''
 
-/**
- * Stands in for the grant registry: the document under `notes/` is the one
- * the user opened; anything else was not.
- */
+/** A real, tiny PNG so a served response can be checked for its bytes. */
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+/** Stands in for the grant registry: only `doc` was opened. */
+const granted = new Set<string>()
 const readableDoc = async (p: string): Promise<string> => {
-  if (p === doc) return doc
+  if (granted.has(p)) return p
   throw new PathPermissionError()
 }
+/** Stands in for the window list: which real document paths are showing. */
+const open = new Set<string>()
+const openDoc = async (real: string): Promise<boolean> => open.has(real)
 
 beforeEach(async () => {
   root = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'alethia-images-')))
@@ -31,10 +39,14 @@ beforeEach(async () => {
   await fsp.mkdir(path.join(root, 'elsewhere'))
   doc = path.join(notes, 'note.md')
   await fsp.writeFile(doc, '# note')
-  await fsp.writeFile(path.join(notes, 'photo.png'), 'png')
+  await fsp.writeFile(path.join(notes, 'photo.png'), PNG)
   await fsp.writeFile(path.join(notes, 'assets', 'diagram.svg'), '<svg/>')
   await fsp.writeFile(path.join(notes, 'secrets.txt'), 'hunter2')
-  await fsp.writeFile(path.join(root, 'elsewhere', 'outside.png'), 'png')
+  await fsp.writeFile(path.join(root, 'elsewhere', 'outside.png'), PNG)
+  granted.clear()
+  granted.add(doc)
+  open.clear()
+  open.add(doc)
 })
 
 afterEach(async () => {
@@ -42,7 +54,26 @@ afterEach(async () => {
 })
 
 const resolve = (src: string, forDoc = doc) =>
-  resolveImageRequest(imageRequestUrl(forDoc, src), readableDoc)
+  resolveImageRequest(imageRequestUrl(forDoc, src), readableDoc, openDoc)
+const serve = (src: string, forDoc = doc) =>
+  serveImage(imageRequestUrl(forDoc, src), { isReadableDoc: readableDoc, isOpenDoc: openDoc })
+
+describe('destinationToPath', () => {
+  it('unwraps the angle-bracket form markdown uses for names with spaces', () => {
+    expect(destinationToPath('<my pic.png>')).toBe('my pic.png')
+  })
+  it('decodes percent escapes', () => {
+    expect(destinationToPath('my%20pic.png')).toBe('my pic.png')
+  })
+  it('drops a query or fragment, which no file has', () => {
+    expect(destinationToPath('a.png?v=2')).toBe('a.png')
+    expect(destinationToPath('sprite.svg#icon')).toBe('sprite.svg')
+  })
+  it('keeps a literal percent that is not an escape, as a browser does', () => {
+    expect(destinationToPath('100%.png')).toBe('100%.png')
+    expect(destinationToPath('50%discount.png')).toBe('50%discount.png')
+  })
+})
 
 describe('images the scheme serves', () => {
   it('serves an image beside the document', async () => {
@@ -59,23 +90,34 @@ describe('images the scheme serves', () => {
     })
   })
 
-  it('accepts ./ and percent-encoded sources the way a browser would', async () => {
-    await expect(resolve('./photo.png')).resolves.toMatchObject({ mimeType: 'image/png' })
-    await fsp.writeFile(path.join(notes, 'my photo.png'), 'png')
-    await expect(resolve('my%20photo.png')).resolves.toMatchObject({
-      filePath: path.join(notes, 'my photo.png'),
+  it('accepts markdown destination forms: ./, %20, <...>, ?query', async () => {
+    await fsp.writeFile(path.join(notes, 'my photo.png'), PNG)
+    for (const src of ['./photo.png', 'my%20photo.png', '<my photo.png>', 'photo.png?v=2']) {
+      await expect(resolve(src), src).resolves.toMatchObject({ mimeType: 'image/png' })
+    }
+  })
+
+  it('serves a file whose name starts with two dots', async () => {
+    // `..cover.png` is a legal name inside the folder; a naive `..` prefix
+    // check refused it as a traversal.
+    await fsp.writeFile(path.join(notes, '..cover.png'), PNG)
+    await expect(resolve('..cover.png')).resolves.toMatchObject({
+      filePath: path.join(notes, '..cover.png'),
     })
   })
 
-  it('exposes a size cap the handler enforces', () => {
-    expect(MAX_IMAGE_BYTES).toBeGreaterThan(1024 * 1024)
+  it('serves a file whose name contains # and ?', async () => {
+    // These are legal in filenames and were mangled when the path was turned
+    // into a file: URL; reading through a descriptor has no such step.
+    await fsp.writeFile(path.join(notes, 'fig #1?.png'), PNG)
+    const response = await serve('fig%20%231%3F.png')
+    expect(response.status).toBe(200)
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(PNG)
   })
 })
 
 describe('images the scheme refuses', () => {
   it('refuses a source that climbs out of the document folder', async () => {
-    // The whole consent model is "you opened this file, you may see what is
-    // beside it". `../` is the obvious way out.
     await expect(resolve('../elsewhere/outside.png')).rejects.toThrow(/outside the document folder/)
   })
 
@@ -86,20 +128,56 @@ describe('images the scheme refuses', () => {
   })
 
   it('refuses a symlink inside the folder that points out of it', async () => {
-    // Containment is decided on real paths precisely for this case.
     await fsp.symlink(path.join(root, 'elsewhere', 'outside.png'), path.join(notes, 'link.png'))
     await expect(resolve('link.png')).rejects.toThrow(/outside the document folder/)
   })
 
+  it('refuses a symlink named like an image that points at a non-image', async () => {
+    // The extension policy has to hold on the real file, not the link name,
+    // or the scheme is a general file reader wearing a .png.
+    await fsp.symlink(path.join(notes, 'secrets.txt'), path.join(notes, 'photo2.png'))
+    await expect(resolve('photo2.png')).rejects.toThrow(/not an image file/)
+  })
+
   it('refuses a document the user never opened', async () => {
-    // A renderer that named some other file as the "document" would
-    // otherwise be able to read images beside anything on disk.
     const stranger = path.join(root, 'elsewhere', 'other.md')
+    await fsp.writeFile(stranger, '')
     await expect(resolve('outside.png', stranger)).rejects.toThrow(PathPermissionError)
   })
 
+  it('refuses a granted document that is not open in any window', async () => {
+    // Grants persist (recents are re-granted at launch). Consent to see
+    // images lasts only while the note is actually open.
+    open.clear()
+    await expect(resolve('photo.png')).rejects.toThrow(/not open/)
+  })
+
+  it('takes the image folder from the document\u2019s real path, not an alias', async () => {
+    // A symlink elsewhere pointing at the granted note passes the grant
+    // check (it resolves to a granted file). Its own directory must not
+    // become the image folder.
+    const alias = path.join(root, 'elsewhere', 'alias.md')
+    await fsp.symlink(doc, alias)
+    granted.add(alias)
+    // Resolved against the real note's folder, `outside.png` does not exist
+    // there, so this fails as not-found; the wrong behaviour would have
+    // served /elsewhere/outside.png, which does exist.
+    await expect(resolve('outside.png', alias)).rejects.toThrow(/ENOENT/)
+    // ...while an image beside the real note is still fine through the alias.
+    await expect(resolve('photo.png', alias)).resolves.toMatchObject({ mimeType: 'image/png' })
+  })
+
+  it('refuses a directory posing as a document', async () => {
+    // A folder named notes.md opened as a root passes the extension check;
+    // its parent must not become the image folder.
+    const dir = path.join(root, 'folder.md')
+    await fsp.mkdir(dir)
+    granted.add(dir)
+    open.add(dir)
+    await expect(resolve('elsewhere/outside.png', dir)).rejects.toThrow(/not a file/)
+  })
+
   it('refuses non-image files even inside the folder', async () => {
-    // Without this the scheme is a general file reader wearing an <img> tag.
     await expect(resolve('secrets.txt')).rejects.toThrow(/not an image file/)
     await expect(resolve('note.md')).rejects.toThrow(/not an image file/)
   })
@@ -111,18 +189,60 @@ describe('images the scheme refuses', () => {
   })
 
   it('refuses malformed requests', async () => {
-    await expect(resolveImageRequest('not a url', readableDoc)).rejects.toThrow(/malformed/)
-    await expect(resolveImageRequest('https://x/?doc=a&src=b', readableDoc)).rejects.toThrow(
-      /wrong scheme/,
-    )
+    await expect(resolveImageRequest('not a url', readableDoc, openDoc)).rejects.toThrow(/malformed/)
     await expect(
-      resolveImageRequest('alethia-image://local/?doc=/x.md', readableDoc),
+      resolveImageRequest('https://x/?doc=a&src=b', readableDoc, openDoc),
+    ).rejects.toThrow(/wrong scheme/)
+    await expect(
+      resolveImageRequest('alethia-image://local/?doc=/x.md', readableDoc, openDoc),
     ).rejects.toThrow(/needs doc and src/)
   })
+})
 
-  it('reports a missing image as not found rather than as forbidden', async () => {
-    // The handler maps ENOENT to 404, so the widget can say "not found"
-    // instead of implying the user did something wrong.
-    await expect(resolve('nope.png')).rejects.toMatchObject({ code: 'ENOENT' })
+describe('serveImage: the handler boundary', () => {
+  it('returns the bytes with the image type and defensive headers', async () => {
+    const response = await serve('photo.png')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toBe('image/png')
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
+    expect(response.headers.get('Content-Security-Policy')).toContain("default-src 'none'")
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(PNG)
+  })
+
+  it('maps a refusal to 403', async () => {
+    expect((await serve('secrets.txt')).status).toBe(403)
+    expect((await serve('../elsewhere/outside.png')).status).toBe(403)
+  })
+
+  it('maps a missing file to 404, not 403', async () => {
+    // The widget says "not found" for this; a 403 would imply the user did
+    // something wrong.
+    expect((await serve('nope.png')).status).toBe(404)
+  })
+
+  it('maps a directory named like an image to 404', async () => {
+    await fsp.mkdir(path.join(notes, 'dir.png'))
+    expect((await serve('dir.png')).status).toBe(404)
+  })
+
+  it('refuses an oversized file with 413 without reading it all', async () => {
+    // Sparse: allocates no disk, but stat reports the size.
+    const big = await fsp.open(path.join(notes, 'huge.png'), 'w')
+    await big.truncate(MAX_IMAGE_BYTES + 1)
+    await big.close()
+    expect((await serve('huge.png')).status).toBe(413)
+  })
+
+  it('never answers a malformed percent sequence with 500', async () => {
+    // `100%.png` is an ordinary authoring mistake, not a bug in the app.
+    const response = await serve('100%.png')
+    expect(response.status).toBe(404)
+  })
+
+  it('classifies errors the way the widget expects', () => {
+    expect(statusForError(new PathPermissionError())).toBe(403)
+    expect(statusForError(Object.assign(new Error(), { code: 'ENOENT' }))).toBe(404)
+    expect(statusForError(Object.assign(new Error(), { code: 'EFBIG' }))).toBe(413)
+    expect(statusForError(new TypeError('surprise'))).toBe(500)
   })
 })

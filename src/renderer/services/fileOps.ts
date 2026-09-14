@@ -20,6 +20,10 @@ export async function ensureClosable(): Promise<boolean> {
 
 async function adoptFile(filePath: string): Promise<void> {
   const { content, mtimeMs, lineEnding } = await api.fs.readFile(filePath)
+  // Path first: the editor builds image URLs from it during setDocument, and
+  // the store effect that would correct it runs a tick later. Without this,
+  // opening B while A is open briefly requests B's images against A's folder.
+  editorController.setFilePath(filePath)
   editorController.setDocument(content)
   useDocumentStore.getState().load({ filePath, text: content, mtimeMs, lineEnding })
   await api.recents.add(filePath)
