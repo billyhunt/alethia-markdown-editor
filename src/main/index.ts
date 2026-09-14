@@ -9,6 +9,7 @@ import { grantPersistedRecents } from './recents.ts'
 import { applyTheme } from './theme.ts'
 import { enqueueArgv, enqueuePath } from './openWith.ts'
 import { closeAllWatchers } from './watcher.ts'
+import { installImageProtocol, registerImageScheme } from './images.ts'
 
 // Registered at module top level: Finder fires open-file before 'ready', and
 // a listener attached later would miss it entirely.
@@ -16,6 +17,10 @@ app.on('open-file', (event, filePath) => {
   event.preventDefault()
   void enqueuePath(filePath)
 })
+
+// Scheme privileges are only accepted before ready, so this cannot wait for
+// the whenReady block below.
+registerImageScheme()
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -44,6 +49,7 @@ if (!app.requestSingleInstanceLock()) {
     grantPersistedRecents()
     applyTheme(getSettings().theme)
     hardenSession()
+    installImageProtocol()
     registerIpcHandlers()
     buildApplicationMenu()
     await enqueueArgv(process.argv)

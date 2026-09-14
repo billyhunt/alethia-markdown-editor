@@ -7,8 +7,18 @@ import { syntaxHighlighting } from '@codemirror/language'
 import { markdownExtension } from './markdownLanguage.ts'
 import { codeHighlightStyle, editorTheme } from './theme.ts'
 import { livePreview } from './extensions/index.ts'
+import { documentPathExtension } from './extensions/documentPath.ts'
 
-export function createEditorState(doc: string, extra: Extension = []): EditorState {
+export interface EditorStateOptions {
+  /** Where the document lives, for resolving relative image sources. */
+  filePath?: string | null
+}
+
+export function createEditorState(
+  doc: string,
+  extra: Extension = [],
+  options: EditorStateOptions = {},
+): EditorState {
   return EditorState.create({
     doc,
     extensions: [
@@ -24,6 +34,7 @@ export function createEditorState(doc: string, extra: Extension = []): EditorSta
       syntaxHighlighting(codeHighlightStyle),
       closeBrackets(),
       search({ top: true }),
+      documentPathExtension(options.filePath ?? null),
       livePreview(),
       // markdown() already contributes markdownKeymap at high precedence
       // (Enter continues lists, Backspace removes markup), so it is not

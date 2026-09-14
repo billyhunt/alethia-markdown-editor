@@ -3,6 +3,7 @@ import { EditorSelection } from '@codemirror/state'
 import { createEditorState } from './createEditor.ts'
 import { EDITOR_COMMANDS } from './commands.ts'
 import { focusMode, modesCompartment, typewriterMode } from './extensions/modes.ts'
+import { documentPath, documentPathCompartment } from './extensions/documentPath.ts'
 import type { EditorCommand } from '../../shared/ipc.ts'
 
 /**
@@ -13,6 +14,8 @@ import type { EditorCommand } from '../../shared/ipc.ts'
 class EditorController {
   private view: EditorView | null = null
   private docListeners = new Set<(text: string) => void>()
+  /** Kept so a rebuilt state (setDocument) starts with the right path. */
+  private filePath: string | null = null
 
   mount(parent: HTMLElement): () => void {
     this.view?.destroy()
@@ -37,9 +40,13 @@ class EditorController {
     const view = this.view
     if (!view) return
     view.setState(
-      createEditorState(text, EditorView.updateListener.of((update) => {
-        if (update.docChanged) this.emit(update.state.doc.toString())
-      })),
+      createEditorState(
+        text,
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) this.emit(update.state.doc.toString())
+        }),
+        { filePath: this.filePath },
+      ),
     )
     // Stats and the outline derive from doc changes, so a freshly loaded
     // document must announce itself or the status bar reads zero.
@@ -90,6 +97,21 @@ class EditorController {
     if (!view) return false
     view.focus()
     return EDITOR_COMMANDS[command]({ state: view.state, dispatch: view.dispatch })
+  }
+
+  /**
+   * Tells the editor where the document lives, so relative image sources can
+   * resolve. Driven from the document store rather than passed to
+   * setDocument, because the path becomes known in a different place from the
+   * text (a new document gets a path only when autosave files it).
+   */
+  setFilePath(filePath: string | null): void {
+    this.filePath = filePath
+    const view = this.view
+    if (!view || view.state.facet(documentPath) === filePath) return
+    view.dispatch({
+      effects: documentPathCompartment.reconfigure(documentPath.of(filePath)),
+    })
   }
 
   /** Swaps focus/typewriter modes without rebuilding the document state. */

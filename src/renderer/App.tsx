@@ -27,6 +27,11 @@ export default function App() {
     editorController.setModes({ focus: focusMode, typewriter: typewriterMode })
   }, [focusMode, typewriterMode])
 
+  const filePath = useDocumentStore((state) => state.filePath)
+  useEffect(() => {
+    editorController.setFilePath(filePath)
+  }, [filePath])
+
   useEffect(() => {
     let timer: number | undefined
     return editorController.onDocChange((text) => {
