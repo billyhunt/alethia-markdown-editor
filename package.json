@@ -6,6 +6,9 @@
   "private": true,
   "version": "0.1.0-alpha.1",
   "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
   "main": "dist-electron/main.js",
   "scripts": {
     "postinstall": "node scripts/brand-dev-electron.mjs",

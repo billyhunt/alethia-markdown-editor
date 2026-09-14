@@ -19,7 +19,27 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const app = process.argv[2] ?? 'release/mac-arm64/Alethia.app'
+/**
+ * electron-builder names its output directory after the architecture:
+ * `release/mac-arm64`, `release/mac` on Intel, `release/mac-universal` for a
+ * universal build. Hardcoding one of those makes this fail on a perfectly
+ * good bundle built elsewhere, so the directory is discovered.
+ */
+function defaultApp() {
+  try {
+    for (const entry of fs.readdirSync('release')) {
+      if (!entry.startsWith('mac')) continue
+      const candidate = path.join('release', entry, 'Alethia.app')
+      if (fs.existsSync(candidate)) return candidate
+    }
+  } catch {
+    // No release directory at all; fall through to the conventional path so
+    // the error names something recognisable.
+  }
+  return 'release/mac-arm64/Alethia.app'
+}
+
+const app = process.argv[2] ?? defaultApp()
 const failures = []
 const fail = (message) => failures.push(message)
 
@@ -209,7 +229,25 @@ if (!fs.existsSync(archive)) {
       '/licenses/OFL-dm-mono.txt',
     ]
     for (const entry of required) {
-      if (!asar.paths.includes(entry)) fail(`app.asar is missing ${entry}`)
+      if (!asar.paths.includes(entry)) {
+        fail(`app.asar is missing ${entry}`)
+        continue
+      }
+      // A zero-length entry is present and useless: an index.html or a
+      // preload truncated to nothing would otherwise pass.
+      const contents = asar.read(entry)
+      if (contents === null) fail(`${entry} has no readable content`)
+      else if (contents.length === 0) fail(`${entry} is empty`)
+    }
+
+    // The renderer and the fonts arrive as hashed assets, so they cannot be
+    // named. Without these the licence checks above would certify OFL
+    // compliance for fonts that are not in the bundle.
+    if (!asar.paths.some((entry) => /^\/dist\/assets\/.*\.js$/.test(entry))) {
+      fail('app.asar has no built renderer bundle under /dist/assets')
+    }
+    if (!asar.paths.some((entry) => /^\/dist\/assets\/.*\.woff2?$/.test(entry))) {
+      fail('app.asar has no bundled fonts under /dist/assets')
     }
 
     // An index.html that survived packaging says nothing about the renderer

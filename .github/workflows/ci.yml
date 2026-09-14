@@ -5,10 +5,12 @@ on:
     branches: [main]
   pull_request:
 
-# A superseded run on the same branch is wasted work.
+# A superseded pull-request run is wasted work. Pushes to main are not
+# cancelled: the packaged build is the only check on a shippable bundle, and
+# cancelling it would leave intermediate main commits never verified.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -17,20 +19,34 @@ jobs:
   checks:
     name: Typecheck, lint and test
     # The suite runs against jsdom, not a real Electron runtime, so Linux is
-    # enough here and is both faster and cheaper than a macOS runner. The
-    # packaged build below is what needs macOS.
+    # enough for most of it and is faster and cheaper than a macOS runner.
+    # The parts that genuinely depend on macOS (the file watcher and path
+    # realpath handling) are re-run on macOS in the package job below.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # No step pushes, and PR-controlled install and build scripts run on
+          # this runner, so there is no reason to leave a token in .git/config.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '26'
+          node-version-file: .nvmrc
           cache: npm
 
       # The postinstall step patches the development Electron bundle and
       # no-ops off macOS, so a plain install is safe here.
       - run: npm ci
+
+      # `npm ci` catches dependency drift but tolerates a stale root version
+      # or a missing hasInstallScript, which is exactly what was wrong with
+      # this lock file before.
+      - name: Check the lock file is what npm would generate
+        run: |
+          npm install --package-lock-only --ignore-scripts
+          git diff --exit-code package-lock.json
 
       - name: Typecheck
         run: npm run typecheck
@@ -42,22 +58,23 @@ jobs:
         run: npm run test:coverage
 
       - name: Summarise coverage
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           if [ -f coverage/coverage-summary.json ]; then
             node -e '
               const t = require("./coverage/coverage-summary.json").total;
-              const row = (k) => `| ${k} | ${t[k].pct}% | ${t[k].covered}/${t[k].total} |`;
-              console.log("| Metric | Covered | Count |");
+              console.log("| Metric | % | Covered/Total |");
               console.log("|---|---|---|");
-              for (const k of ["statements", "branches", "functions", "lines"]) console.log(row(k));
+              for (const k of ["statements", "branches", "functions", "lines"]) {
+                console.log(`| ${k} | ${t[k].pct}% | ${t[k].covered}/${t[k].total} |`);
+              }
             ' >> "$GITHUB_STEP_SUMMARY"
           else
             echo "No coverage summary produced." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload coverage
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage
@@ -69,22 +86,31 @@ jobs:
     # An Electron build can break while every unit test still passes, which is
     # exactly the failure that should not be discovered on release day. The
     # build is unsigned, so it needs no certificates.
+    needs: checks
     runs-on: macos-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '26'
+          node-version-file: .nvmrc
           cache: npm
 
-      - name: Cache the Electron download
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Caches/electron
-          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
+      # Deliberately no cache for the Electron download. @electron/get checks
+      # the zip against SHASUMS256.txt when it downloads, but not when it
+      # restores from cache, and a cache key with no secret in it can be
+      # planted by anything with push access. One ~100 MB download per lock
+      # change is cheaper than an unverified binary inside the .app.
       - run: npm ci
+
+      # The only OS-coupled code in the repo: the chokidar watcher (FSEvents
+      # here, inotify on Linux) and the /var -> /private/var realpath handling,
+      # which never executes on the Linux job.
+      - name: Test on macOS
+        run: npm test
 
       - name: Package
         run: npm run package

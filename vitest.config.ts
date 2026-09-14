@@ -8,7 +8,10 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.ts'],
+      // Include .tsx. Excluding it hid all 11 renderer components, so the
+      // reported percentage described only the non-React slice and no amount
+      // of untested UI could ever trip the floor.
+      include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.d.ts', 'src/preload/**'],
       // json-summary feeds the CI coverage table; text keeps the local run
       // readable.
@@ -18,10 +21,10 @@ export default defineConfig({
       // a big untested module -- without turning every change into a coverage
       // negotiation.
       thresholds: {
-        statements: 28,
-        branches: 25,
-        functions: 26,
-        lines: 28,
+        statements: 26,
+        branches: 23,
+        functions: 23,
+        lines: 26,
       },
     },
   },

@@ -52,6 +52,9 @@ function goodFiles(): Record<string, string> {
     '/dist/index.html': INDEX_HTML,
     '/dist/assets/app.js': 'console.log("renderer")',
     '/dist/assets/app.css': 'body { color: black }',
+    // The OFL fonts arrive as hashed assets, so the licence files alone do
+    // not prove the fonts they cover actually shipped.
+    '/dist/assets/archivo-latin-400-normal.woff2': 'font bytes',
     '/dist-electron/main.js': 'require("electron")',
     '/dist-electron/preload.cjs': 'contextBridge.exposeInMainWorld()',
     '/package.json': '{"name":"alethia"}',
@@ -246,6 +249,33 @@ describe('verify-package on broken bundles', () => {
     const result = verify(app)
     expect(result.code).toBe(1)
     expect(result.output).toContain('unreadable')
+  })
+
+  it('fails when the renderer bundle is missing entirely', () => {
+    // index.html can reference nothing and still be present; a build that
+    // emitted no renderer chunk has to fail.
+    const files = goodFiles()
+    delete files['/dist/assets/app.js']
+    files['/dist/index.html'] = '<!doctype html><html><body></body></html>'
+    const result = verify(bundle('rendererless', { files }))
+    expect(result.code).toBe(1)
+    expect(result.output).toContain('no built renderer bundle')
+  })
+
+  it('fails when the fonts are not packaged', () => {
+    const files = goodFiles()
+    delete files['/dist/assets/archivo-latin-400-normal.woff2']
+    const result = verify(bundle('fontless', { files }))
+    expect(result.code).toBe(1)
+    expect(result.output).toContain('no bundled fonts')
+  })
+
+  it('fails when a required file is present but empty', () => {
+    const files = goodFiles()
+    files['/dist-electron/preload.cjs'] = ''
+    const result = verify(bundle('hollow', { files }))
+    expect(result.code).toBe(1)
+    expect(result.output).toContain('/dist-electron/preload.cjs is empty')
   })
 
   it('fails when the source tree was swept into the package', () => {
