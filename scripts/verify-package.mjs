@@ -112,6 +112,20 @@ const plistValue = (plist, key, format = 'raw') => {
   }
 }
 
+/**
+ * `plutil` ships with macOS and nowhere else. Without it the bundle identity
+ * cannot be read at all, which is reported once and plainly rather than as
+ * three separate "missing key" failures that look like a bad build.
+ */
+const havePlutil = (() => {
+  try {
+    execFileSync('plutil', ['-help'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+})()
+
 // ---- the bundle itself ----
 
 if (!fs.existsSync(app) || !fs.statSync(app).isDirectory()) {
@@ -129,6 +143,11 @@ try {
 const plist = path.join(app, 'Contents/Info.plist')
 if (!fs.existsSync(plist)) {
   fail('no Info.plist')
+} else if (!havePlutil) {
+  fail(
+    'plutil is unavailable, so the bundle identity and document types cannot be ' +
+      'verified; run this on macOS',
+  )
 } else {
   for (const [key, value] of Object.entries({
     CFBundleName: 'Alethia',

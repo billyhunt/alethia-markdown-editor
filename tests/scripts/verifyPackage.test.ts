@@ -14,6 +14,14 @@ import path from 'node:path'
 
 const SCRIPT = path.resolve(__dirname, '../../scripts/verify-package.mjs')
 
+/**
+ * Reading the bundle identity needs `plutil`, which exists only on macOS, so
+ * the cases that depend on it cannot run in the Linux CI job. The verifier
+ * says so plainly instead of reporting the keys as missing, and that message
+ * is asserted below so the skip cannot hide a real regression.
+ */
+const onMac = process.platform === 'darwin'
+
 let dir = ''
 
 const PLIST = `<?xml version="1.0" encoding="UTF-8"?>
@@ -137,10 +145,18 @@ afterEach(async () => {
 })
 
 describe('verify-package on a sound bundle', () => {
-  it('passes', () => {
+  it.skipIf(!onMac)('passes', () => {
     const result = verify(bundle('good'))
     expect(result.output).toContain('looks shippable')
     expect(result.code).toBe(0)
+  })
+
+  it.skipIf(onMac)('refuses to pass judgement without plutil', () => {
+    // Off macOS the verifier must fail loudly rather than quietly skipping
+    // the identity checks and calling the bundle shippable.
+    const result = verify(bundle('good'))
+    expect(result.code).toBe(1)
+    expect(result.output).toContain('plutil is unavailable')
   })
 })
 
@@ -163,14 +179,14 @@ describe('verify-package on broken bundles', () => {
     expect(result.output).toContain('no Info.plist')
   })
 
-  it('fails when the bundle identity is wrong', () => {
+  it.skipIf(!onMac)('fails when the bundle identity is wrong', () => {
     const wrong = PLIST.replace('com.billyhunt.alethia', 'com.example.someoneelse')
     const result = verify(bundle('misidentified', { plist: wrong }))
     expect(result.code).toBe(1)
     expect(result.output).toContain('CFBundleIdentifier')
   })
 
-  it('fails when the markdown claim is narrowed, not just absent', () => {
+  it.skipIf(!onMac)('fails when the markdown claim is narrowed, not just absent', () => {
     // The whole point of the declaration is Finder's Open With list. A build
     // that keeps the key but drops extensions would pass a presence check.
     const narrowed = PLIST.replace(
