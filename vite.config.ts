@@ -4,7 +4,7 @@ import { defineConfig, type Plugin } from 'vite'
 
 const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-  "img-src 'self' data:; font-src 'self' data:; connect-src 'none'"
+  "img-src 'self' data: alethia-image:; font-src 'self' data:; connect-src 'none'"
 
 // Production-only CSP. Dev must stay open for Vite's HMR client and the
 // React Refresh preamble, both of which need inline scripts.

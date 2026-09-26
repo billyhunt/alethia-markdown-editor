@@ -4,6 +4,9 @@ export const MARKDOWN_EXTENSIONS = ['.md', '.markdown', '.mdown', '.mkd'] as con
 /** Also openable, but never offered as a save target by default. */
 export const READABLE_EXTENSIONS = [...MARKDOWN_EXTENSIONS, '.txt'] as const
 
+/** Local image formats rendered through Alethia's grant-checked protocol. */
+export const IMAGE_EXTENSIONS = ['.avif', '.gif', '.jpeg', '.jpg', '.png', '.webp'] as const
+
 /** Directory names never descended into when scanning a workspace folder. */
 export const IGNORED_DIR_NAMES = ['node_modules', '.git', 'dist', 'build', 'release']
 
@@ -21,4 +24,8 @@ export function isMarkdownPath(filePath: string): boolean {
 
 export function isReadablePath(filePath: string): boolean {
   return (READABLE_EXTENSIONS as readonly string[]).includes(lowerExt(filePath))
+}
+
+export function isImagePath(filePath: string): boolean {
+  return (IMAGE_EXTENSIONS as readonly string[]).includes(lowerExt(filePath))
 }

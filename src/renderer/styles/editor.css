@@ -59,6 +59,15 @@
   text-decoration: none;
 }
 
+/* Local images are bounded to the writing column and leave raw source at the caret. */
+.cm-md-image {
+  display: block;
+  max-width: 100%;
+  max-height: 32rem;
+  margin: 0.75rem 0;
+  object-fit: contain;
+}
+
 .cm-md-hr {
   display: block;
   border: none;

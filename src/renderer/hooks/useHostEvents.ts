@@ -21,7 +21,7 @@ export function useHostEvents(): void {
       api.on.folderTree((tree) => useWorkspaceStore.getState().setFolder(tree)),
       api.on.openPath((event) => {
         if (event.kind === 'dir') void adoptFolder(event.path)
-        else void openPath(event.path)
+        else void openPath(event.path, { preferDocument: true })
       }),
       api.on.closeRequested(() => {
         void ensureClosable().then((closable) => {
@@ -47,12 +47,15 @@ export function useHostEvents(): void {
       const pending = ready.pendingPaths
 
       if (pending.length > 0) {
-        // Restore the workspace first, so a file opened from Finder arrives
-        // with a populated sidebar rather than an empty one.
-        if (session.folder) await adoptFolder(session.folder)
+        // A Finder/argv file is document-first. Restore a workspace only when
+        // it is the thing the user explicitly opened, not as a side effect of
+        // the last session.
+        if (session.folder && !pending.some((entry) => entry.kind === 'file')) {
+          await adoptFolder(session.folder)
+        }
         for (const entry of pending) {
           if (entry.kind === 'dir') await adoptFolder(entry.path)
-          else await openPath(entry.path)
+          else await openPath(entry.path, { preferDocument: true })
         }
         return
       }

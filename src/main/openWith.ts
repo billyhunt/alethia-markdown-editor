@@ -20,11 +20,9 @@ async function classify(target: string): Promise<OpenPathEvent | null> {
     if (stats.isDirectory()) return { path: grantRoot(target), kind: 'dir' }
     if (!isReadablePath(target)) return null
 
-    // Opening a file from Finder also grants its containing folder, so the
-    // sidebar can list its siblings. Double-clicking a note and being told to
-    // go and open a folder is not a useful place to land. The user picked
-    // this file, so its own directory is the narrowest workspace that makes
-    // the window usable.
+    // A direct file still grants its containing folder, but it does not open
+    // that folder in the UI. The narrow root lets relative images resolve and
+    // preserves the same capability boundary as an explicitly opened folder.
     grantRoot(path.dirname(target))
     return { path: grantFile(target), kind: 'file' }
   } catch {

@@ -22,17 +22,11 @@ async function adoptFile(filePath: string): Promise<void> {
   const { content, mtimeMs, lineEnding } = await api.fs.readFile(filePath)
   editorController.setDocument(content)
   useDocumentStore.getState().load({ filePath, text: content, mtimeMs, lineEnding })
+  editorController.refreshPreview()
   await api.recents.add(filePath)
   await api.document.watch(filePath)
   useWorkspaceStore.getState().setNotice(null)
 
-  // With no workspace yet, take the file's own folder. Otherwise opening a
-  // note from Finder lands on a sidebar telling you to open a folder, which
-  // reads as the app refusing to work until you do something.
-  if (!useWorkspaceStore.getState().folderRoot) {
-    const parent = filePath.slice(0, filePath.lastIndexOf('/'))
-    if (parent) await adoptFolder(parent).catch(() => undefined)
-  }
 }
 
 export async function newDocument(): Promise<void> {
@@ -43,10 +37,23 @@ export async function newDocument(): Promise<void> {
   useWorkspaceStore.getState().setNotice(null)
 }
 
-export async function openPath(filePath: string): Promise<void> {
+interface OpenPathOptions {
+  /** A file chosen directly should take the whole window unless a workspace is already open. */
+  preferDocument?: boolean
+}
+
+export async function openPath(
+  filePath: string,
+  { preferDocument = false }: OpenPathOptions = {},
+): Promise<void> {
   if (!(await ensureClosable())) return
   try {
     await adoptFile(filePath)
+    if (preferDocument && !useWorkspaceStore.getState().folderRoot) {
+      // This is transient; a direct-open must not overwrite the user's global
+      // sidebar preference, and the toggle remains one click away.
+      useWorkspaceStore.getState().setSidebarVisible(false)
+    }
   } catch (error) {
     await api.dialog.showError({ title: 'Could not open file', message: unwrapIpcError(error) })
   }
@@ -54,7 +61,7 @@ export async function openPath(filePath: string): Promise<void> {
 
 export async function openFileDialog(): Promise<void> {
   const chosen = await api.dialog.openFile()
-  if (chosen) await openPath(chosen)
+  if (chosen) await openPath(chosen, { preferDocument: true })
 }
 
 export async function openFolderDialog(): Promise<void> {
@@ -99,6 +106,7 @@ async function writeTo(filePath: string, expectedMtimeMs: number | null): Promis
       return false
     }
     useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs })
+    editorController.refreshPreview()
     await api.recents.add(filePath)
     await api.document.watch(filePath)
     useWorkspaceStore.getState().setNotice(null)

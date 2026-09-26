@@ -9,6 +9,11 @@ import { grantPersistedRecents } from './recents.ts'
 import { applyTheme } from './theme.ts'
 import { enqueueArgv, enqueuePath } from './openWith.ts'
 import { closeAllWatchers } from './watcher.ts'
+import { registerImageProtocol, registerImageProtocolScheme } from './images.ts'
+
+// This is the only privileged registration and Electron requires it before
+// `ready`; the handler is installed once the default session exists.
+registerImageProtocolScheme()
 
 // Registered at module top level: Finder fires open-file before 'ready', and
 // a listener attached later would miss it entirely.
@@ -44,6 +49,7 @@ if (!app.requestSingleInstanceLock()) {
     grantPersistedRecents()
     applyTheme(getSettings().theme)
     hardenSession()
+    registerImageProtocol()
     registerIpcHandlers()
     buildApplicationMenu()
     await enqueueArgv(process.argv)

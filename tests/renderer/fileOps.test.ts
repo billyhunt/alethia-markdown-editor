@@ -14,6 +14,7 @@ vi.mock('../../src/renderer/editor/editorController.ts', () => ({
   editorController: {
     getText: () => buffer.text,
     setDocument: (text: string) => { buffer.text = text },
+    refreshPreview: vi.fn(),
   },
 }))
 

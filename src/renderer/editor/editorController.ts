@@ -3,6 +3,7 @@ import { EditorSelection } from '@codemirror/state'
 import { createEditorState } from './createEditor.ts'
 import { EDITOR_COMMANDS } from './commands.ts'
 import { focusMode, modesCompartment, typewriterMode } from './extensions/modes.ts'
+import { previewContextChanged } from './extensions/inlineDecorations.ts'
 import type { EditorCommand } from '../../shared/ipc.ts'
 
 /**
@@ -13,6 +14,7 @@ import type { EditorCommand } from '../../shared/ipc.ts'
 class EditorController {
   private view: EditorView | null = null
   private docListeners = new Set<(text: string) => void>()
+
 
   mount(parent: HTMLElement): () => void {
     this.view?.destroy()
@@ -65,6 +67,8 @@ class EditorController {
     view.focus()
   }
 
+
+
   getText(): string {
     return this.view?.state.doc.toString() ?? ''
   }
@@ -102,6 +106,11 @@ class EditorController {
         modes.typewriter ? typewriterMode() : [],
       ]),
     })
+  }
+
+  /** Refreshes decorations that depend on renderer metadata, not document text. */
+  refreshPreview(): void {
+    this.view?.dispatch({ annotations: previewContextChanged.of(true) })
   }
 
   hasFocus(): boolean {

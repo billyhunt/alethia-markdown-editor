@@ -6,10 +6,13 @@ import {
   type ViewUpdate,
 } from '@codemirror/view'
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
-import { type Range } from '@codemirror/state'
+import { Annotation, type Range } from '@codemirror/state'
 import type { SyntaxNode } from '@lezer/common'
+import { isRelativeImageTarget, imageProtocolUrl } from '../../../shared/images.ts'
+import { useDocumentStore } from '../../state/documentStore.ts'
 import { isActive, lineIsActive } from './activeRanges.ts'
 import { BulletWidget, CheckboxWidget, CodeFenceWidget, HrWidget } from '../widgets/index.ts'
+import { ImageWidget } from '../widgets/ImageWidget.ts'
 import { MathWidget } from '../widgets/MathWidget.ts'
 
 /**
@@ -54,6 +57,9 @@ function childrenNamed(node: SyntaxNode, name: string): SyntaxNode[] {
 
 const firstNamed = (node: SyntaxNode, name: string): SyntaxNode | null =>
   childrenNamed(node, name)[0] ?? null
+
+/** Rebuilds preview widgets when metadata such as the open file path changes. */
+export const previewContextChanged = Annotation.define<boolean>()
 
 export function buildDecorations(view: EditorView): Built {
   const built: Built = { decorations: [], atomic: [] }
@@ -251,6 +257,23 @@ export function buildDecorations(view: EditorView): Built {
             if (!active(node.from, node.to)) hide(built, node.from, node.from + 1)
             return true
 
+          case 'Image': {
+            if (!active(node.from, node.to)) {
+              const url = firstNamed(node, 'URL')
+              const target = url ? state.doc.sliceString(url.from, url.to) : ''
+              const documentPath = useDocumentStore.getState().filePath
+              if (documentPath && isRelativeImageTarget(target)) {
+                replaceWith(
+                  built,
+                  node.from,
+                  node.to,
+                  Decoration.replace({ widget: new ImageWidget(imageProtocolUrl(documentPath, target)) }),
+                )
+              }
+            }
+            return false
+          }
+
           case 'Link': {
             const url = firstNamed(node, 'URL')
             const href = url ? state.doc.sliceString(url.from, url.to) : ''
@@ -370,11 +393,15 @@ export const inlineDecorations = ViewPlugin.fromClass(
       // The tree check matters: lezer parses large documents incrementally in
       // idle time, and without it the bottom of a long file stays raw.
       const treeChanged = syntaxTree(update.state) !== syntaxTree(update.startState)
+      const contextChanged = update.transactions.some(
+        (transaction) => transaction.annotation(previewContextChanged) === true,
+      )
       if (
         update.docChanged ||
         update.selectionSet ||
         update.viewportChanged ||
-        treeChanged
+        treeChanged ||
+        contextChanged
       ) {
         const built = buildDecorations(update.view)
         this.decorations = Decoration.set(built.decorations, true)

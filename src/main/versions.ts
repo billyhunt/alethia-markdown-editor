@@ -118,8 +118,9 @@ async function entriesFor(filePath: string): Promise<DocumentVersion[]> {
 export async function snapshotVersion(filePath: string, content: string): Promise<void> {
   if (content.length === 0) return
 
-  const dir = dirFor(filePath)
-  const existing = await entriesFor(filePath)
+  const readablePath = await assertReadable(filePath)
+  const dir = dirFor(readablePath)
+  const existing = await entriesFor(readablePath)
   const hash = hashOf(content)
   if (existing[0]?.hash === hash) return
 
@@ -127,13 +128,13 @@ export async function snapshotVersion(filePath: string, content: string): Promis
   // Keeps the originating path discoverable for maintenance and cleanup,
   // since the directory name is only a hash.
   await fs
-    .writeFile(path.join(dir, 'origin.json'), JSON.stringify({ path: filePath }, null, 2), {
+    .writeFile(path.join(dir, 'origin.json'), JSON.stringify({ path: readablePath }, null, 2), {
       flag: 'w',
     })
     .catch(() => undefined)
   await fs.writeFile(path.join(dir, `${nextStamp(dir)}-${hash}.snapshot`), content, 'utf8')
 
-  const all = await entriesFor(filePath)
+  const all = await entriesFor(readablePath)
   const stale = [...thin(all), ...all.slice(MAX_VERSIONS_PER_FILE)]
   for (const version of stale) {
     await fs.rm(path.join(dir, version.id), { force: true }).catch(() => undefined)

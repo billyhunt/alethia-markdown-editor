@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import path from 'node:path'
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { isReadablePath } from '../shared/markdown.ts'
@@ -14,7 +15,7 @@ import {
 import { getSettings, patchSettings } from './settings.ts'
 import { EMPTY_SESSION } from '../shared/settings.ts'
 import { addRecent, clearRecents, listRecents } from './recents.ts'
-import { grantFile, grantRoot, validatePath } from './paths.ts'
+import { assertReadable, assertReadableDir, grantFile, grantRoot, validatePath } from './paths.ts'
 import { takePendingPaths } from './openWith.ts'
 import { markForceClose, noteDocument, noteFolder, setQuitting, takeSession } from './windows.ts'
 import { showFileContextMenu } from './fileMenu.ts'
@@ -73,7 +74,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.folderList, (_event, root: unknown) => listMarkdownTree(root))
   ipcMain.handle(IPC.folderWatch, async (event, root: unknown) => {
     const win = winOf(event)
-    const target = validatePath(root)
+    const target = await assertReadableDir(root)
     if (win) {
       noteFolder(win, target)
       await watchFolder(win, target)
@@ -90,7 +91,7 @@ export function registerIpcHandlers(): void {
   // --- document watch ------------------------------------------------------
   ipcMain.handle(IPC.docWatch, async (event, filePath: unknown) => {
     const win = winOf(event)
-    const target = validatePath(filePath)
+    const target = await assertReadable(filePath)
     if (win) {
       noteDocument(win, target)
       await watchDocument(win, target)
@@ -166,6 +167,9 @@ export function registerIpcHandlers(): void {
     const stats = await fs.stat(target)
     if (stats.isDirectory()) return { path: grantRoot(target), kind: 'dir' }
     if (!isReadablePath(target)) throw new Error('EPERM: not a markdown file')
+    // A dropped file has the same one-folder workspace boundary as a file
+    // chosen through the native dialog or opened from Finder.
+    grantRoot(path.dirname(target))
     return { path: grantFile(target), kind: 'file' }
   })
 
@@ -185,6 +189,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.printExportPdf, (event, suggestedName: unknown) =>
     exportPdf(winOf(event), suggestedName),
   )
+
 
   // --- shell ---------------------------------------------------------------
   ipcMain.handle(IPC.shellOpenExternal, (_event, url: unknown) => {

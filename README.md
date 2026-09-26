@@ -104,15 +104,16 @@ line structure, which CodeMirror forbids a ViewPlugin from doing).
 off and `sandbox` on, and cannot reach the filesystem directly. Main keeps a
 grant registry (`src/main/paths.ts`): a path is only readable once it arrived
 from a source main controls — a dialog, an `open-file` event, argv, a validated
-drop, or an opened folder. Reads are limited to markdown and text, writes to
-markdown, and writes inside `userData` are refused.
+drop, or an opened folder. Text reads are limited to markdown and text; local
+image reads use a separate, extension-limited custom protocol; writes are
+markdown-only and writes inside `userData` are refused.
 
 ## What works
 
 Live preview for headings, bold, italic, strikethrough, inline code, escapes,
-links, bare URLs, horizontal rules, blockquotes, nested bullet and ordered
-lists, task checkboxes, fenced code with per-language highlighting, GFM tables,
-`$…$` and `$$…$$` math via KaTeX, and YAML front matter.
+links, bare URLs, relative local images, horizontal rules, blockquotes, nested
+bullet and ordered lists, task checkboxes, fenced code with per-language
+highlighting, GFM tables, `$…$` and `$$…$$` math via KaTeX, and YAML front matter.
 
 Around it: open/save/save-as with dirty tracking, autosave, per-file version
 history, a folder sidebar with rename/reveal/trash, a heading outline, live word
@@ -133,8 +134,6 @@ document does not rewrite every line.
 - **The caret shifts visually** when a node reveals its markers, because those
   characters were always in the document rather than being inserted.
 - **Raw HTML blocks are shown as source**, never rendered.
-- **Relative image paths are not resolved yet** — that needs a custom protocol
-  handler, since the CSP blocks `file:` images.
 - **The automated suite covers core regressions, not every workflow.** It
   exercises markdown recognition, live-preview reveal logic, formatting,
   document statistics, table navigation, path grants, and line-ending

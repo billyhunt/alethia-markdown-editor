@@ -40,6 +40,7 @@ const emit = (win: BrowserWindow, channel: string, payload: unknown): void => {
 }
 
 export async function watchDocument(win: BrowserWindow, filePath: string): Promise<void> {
+  filePath = await fs.realpath(filePath).catch(() => filePath)
   const entry = watchersFor(win.id)
   await entry.doc?.close()
 
