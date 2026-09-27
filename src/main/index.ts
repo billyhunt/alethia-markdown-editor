@@ -15,11 +15,16 @@ import { registerImageProtocol, registerImageProtocolScheme } from './images.ts'
 // `ready`; the handler is installed once the default session exists.
 registerImageProtocolScheme()
 
+// Finder delivers file opens before `ready`, while resolving each path is
+// asynchronous. Drain this serial queue before restoring any previous session
+// so the file the user clicked cannot lose a startup race to a blank window.
+let finderOpenQueue = Promise.resolve()
+
 // Registered at module top level: Finder fires open-file before 'ready', and
 // a listener attached later would miss it entirely.
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
-  void enqueuePath(filePath)
+  finderOpenQueue = finderOpenQueue.then(() => enqueuePath(filePath))
 })
 
 if (!app.requestSingleInstanceLock()) {
@@ -52,6 +57,7 @@ if (!app.requestSingleInstanceLock()) {
     registerImageProtocol()
     registerIpcHandlers()
     buildApplicationMenu()
+    await finderOpenQueue
     await enqueueArgv(process.argv)
     restoreWindows()
 
