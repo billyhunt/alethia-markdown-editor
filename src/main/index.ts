@@ -20,6 +20,12 @@ registerImageProtocolScheme()
 // so the file the user clicked cannot lose a startup race to a blank window.
 let finderOpenQueue = Promise.resolve()
 
+// End-to-end tests launch against a throwaway profile, so a run never reads or
+// overwrites a real session. The single-instance lock lives in userData too,
+// which keeps a test launch from handing its files to an installed copy.
+const profileOverride = process.env.ALETHIA_USER_DATA_DIR
+if (profileOverride) app.setPath('userData', profileOverride)
+
 // Registered at module top level: Finder fires open-file before 'ready', and
 // a listener attached later would miss it entirely.
 app.on('open-file', (event, filePath) => {
