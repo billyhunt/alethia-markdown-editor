@@ -35,6 +35,7 @@ import {
 } from './windows.ts'
 import { route } from './openWith.ts'
 import { showFileContextMenu } from './fileMenu.ts'
+import { startPathDrag } from './dragOut.ts'
 import { exportPdf } from './printing.ts'
 import { clearVersions, listVersions, readVersion } from './versions.ts'
 import { unwatchDocument, unwatchFolder, watchDocument, watchFolder } from './watcher.ts'
@@ -221,6 +222,13 @@ export function registerIpcHandlers(): void {
     // chosen through the native dialog or opened from Finder.
     grantRoot(path.dirname(target))
     return { path: grantFile(target), kind: 'file' }
+  })
+
+  ipcMain.on(IPC.appStartDrag, (event, target: unknown) => {
+    // A refused drag just does not start; the pointer is the only one waiting.
+    startPathDrag(event.sender, target).catch((error: unknown) => {
+      console.warn('drag refused:', error instanceof Error ? error.message : error)
+    })
   })
 
   // --- context menu --------------------------------------------------------

@@ -194,6 +194,11 @@ export interface MarkdownApi {
     rendererReady(): Promise<RendererReadyResult>
     /** Validates and grants a dropped path. Rejects non-markdown files. */
     grantDroppedPath(path: string): Promise<OpenPathEvent>
+    /**
+     * Turns a sidebar drag into a native file drag, so dropping it in a
+     * terminal types its path. Call from dragstart, after preventDefault.
+     */
+    startDrag(target: { path: string }): void
   }
 
   versions: {
