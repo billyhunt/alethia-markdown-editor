@@ -15,9 +15,25 @@ import {
 import { getSettings, patchSettings } from './settings.ts'
 import { EMPTY_SESSION } from '../shared/settings.ts'
 import { addRecent, clearRecents, listRecents } from './recents.ts'
-import { assertReadable, assertReadableDir, grantFile, grantRoot, validatePath } from './paths.ts'
-import { takePendingPaths } from './openWith.ts'
-import { markForceClose, noteDocument, noteFolder, setQuitting, takeSession } from './windows.ts'
+import {
+  assertReadable,
+  assertReadableDir,
+  grantFile,
+  grantRoot,
+  validatePath,
+} from './paths.ts'
+import {
+  markForceClose,
+  noteDocument,
+  noteEdited,
+  noteFolder,
+  raise,
+  setQuitting,
+  settleIncoming,
+  takeSession,
+  windowShowing,
+} from './windows.ts'
+import { route } from './openWith.ts'
 import { showFileContextMenu } from './fileMenu.ts'
 import { exportPdf } from './printing.ts'
 import { clearVersions, listVersions, readVersion } from './versions.ts'
@@ -141,6 +157,9 @@ export function registerIpcHandlers(): void {
     // Gives the title bar its proxy icon and the red traffic light its dot.
     win.setRepresentedFilename(typeof filePath === 'string' ? filePath : '')
     win.setDocumentEdited(edited === true)
+    // Main routes files away from a window with unsaved work, so it keeps the
+    // flag; it is never trusted to decide whether a close is safe.
+    noteEdited(win, edited === true)
     win.setTitle(
       typeof filePath === 'string' && filePath
         ? (filePath.split('/').pop() ?? 'Alethia')
@@ -148,14 +167,45 @@ export function registerIpcHandlers(): void {
     )
   })
 
+  ipcMain.handle(IPC.windowSettleOpen, (event) => {
+    const win = winOf(event)
+    if (win) settleIncoming(win)
+  })
+  ipcMain.handle(IPC.windowRevealDocument, async (event, filePath: unknown) => {
+    const win = winOf(event)
+    // An unreadable path is shown nowhere; the open that follows reports it.
+    const target = await assertReadable(filePath).catch(() => null)
+    const other = target ? windowShowing(target, win ?? undefined) : null
+    if (!other) return false
+    raise(other)
+    return true
+  })
+
+  ipcMain.handle(IPC.windowRerouteOpen, async (event, filePath: unknown) => {
+    const win = winOf(event)
+    if (!win) return
+    // Release the reservation first, so a failure below cannot leave this
+    // window looking like it is about to show the file forever.
+    const routedHere = settleIncoming(win)
+    noteEdited(win, true)
+    const target = await assertReadable(filePath)
+    // Only the file main itself routed here can be passed on, so a renderer
+    // cannot use this to open windows on paths of its choosing.
+    if (target !== routedHere) throw new Error('EPERM: not the file routed to this window')
+    route({ path: target, kind: 'file' })
+  })
+
   // --- app -----------------------------------------------------------------
   ipcMain.handle(IPC.appRendererReady, (event): RendererReadyResult => {
     const win = winOf(event)
+    // Each window restores its own document and folder, and receives only the
+    // opens that were routed to it.
+    const { session, pending } = win
+      ? takeSession(win)
+      : { session: { ...EMPTY_SESSION }, pending: [] }
     return {
-      pendingPaths: takePendingPaths(),
-      // Each window restores its own document and folder rather than a single
-      // application-wide "last file".
-      session: win ? takeSession(win) : { ...EMPTY_SESSION },
+      pendingPaths: pending,
+      session,
       settings: getSettings(),
       platform: process.platform,
       version: app.getVersion(),

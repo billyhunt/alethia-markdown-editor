@@ -78,7 +78,7 @@ export interface CloseRequestedEvent {
 }
 
 export interface RendererReadyResult {
-  /** Queued open-with paths from open-file / argv / second-instance. */
+  /** Opens from Finder, argv or a second launch, routed to this window. */
   pendingPaths: OpenPathEvent[]
   /** What this particular window should restore. */
   session: WindowSession
@@ -175,6 +175,18 @@ export interface MarkdownApi {
     isFullScreen(): Promise<boolean>
     /** Sets title, represented filename (proxy icon) and the edited dot. */
     setDocument(info: DocumentInfo): Promise<void>
+    /** A routed open finished, successfully or not; frees the window for the next. */
+    settleOpen(): Promise<void>
+    /**
+     * Brings forward another window already showing this file. Resolves true
+     * when one did, in which case this window should not open it as well.
+     */
+    revealDocument(path: string): Promise<boolean>
+    /**
+     * Declines a routed open because this window holds unsaved edits main
+     * had not heard about yet; main sends the file to another window.
+     */
+    rerouteOpen(path: string): Promise<void>
   }
 
   app: {

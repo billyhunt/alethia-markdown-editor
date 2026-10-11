@@ -63,6 +63,9 @@ async function realResolve(target: string): Promise<string> {
 }
 
 
+/** The real path of a file, which is what identifies a document across windows. */
+export const canonicalPath = (target: string): Promise<string> => realResolve(target)
+
 /**
  * Membership is decided on the REAL path only.
  *

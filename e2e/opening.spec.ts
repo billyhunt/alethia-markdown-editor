@@ -55,6 +55,15 @@ test.describe('first launch', () => {
   })
 })
 
+test.describe('quitting', () => {
+  test('quitting right after launch, before the window has loaded, quits', async () => {
+    const app = await launch(box)
+    const exited = new Promise((resolve) => app.process().once('exit', resolve))
+    await app.evaluate(({ app: electronApp }) => electronApp.quit())
+    await expect(Promise.race([exited.then(() => 'exited'), new Promise((r) => setTimeout(() => r('stuck'), 5000))])).resolves.toBe('exited')
+  })
+})
+
 test.describe('opening from the command line', () => {
   test('a file named on launch is the document shown, in front', async () => {
     const note = box.file('note.md')
@@ -65,7 +74,6 @@ test.describe('opening from the command line', () => {
   })
 
   test('several files named on launch each get a window', async () => {
-    knownBug('queued opens all drain into the first window to report ready')
     const files = [box.file('one.md'), box.file('two.md'), box.file('three.md')]
     const app = await launch(box, files)
     await expectDocuments(app, files)
@@ -112,7 +120,6 @@ test.describe('opening from Finder while running', () => {
   })
 
   test('selecting several files in Finder opens every one of them', async () => {
-    knownBug('a window counts as vacant until its renderer reports the document, so rapid opens land in one window')
     const files = [box.file('a.md'), box.file('b.md'), box.file('c.md')]
     const app = await launch(box)
     await app.firstWindow()
@@ -136,7 +143,6 @@ test.describe('opening from Finder while running', () => {
   })
 
   test('the same file spelled through a symlink is still one window', async () => {
-    knownBug('windows are matched on the path as spelled, not the real path')
     const note = box.file('note.md')
     const alias = path.join(box.root, 'alias')
     fs.symlinkSync(box.docs, alias)
@@ -150,7 +156,6 @@ test.describe('opening from Finder while running', () => {
   })
 
   test('unsaved untitled text is never displaced or prompted over by a Finder open', async () => {
-    knownBug('a window with unsaved untitled text counts as vacant')
     const note = box.file('note.md')
     const app = await launch(box)
     const page = await app.firstWindow()
@@ -170,7 +175,6 @@ test.describe('opening from Finder while running', () => {
 
 test.describe('opening from inside a window', () => {
   test('File > Open on a file open in another window brings that window forward', async () => {
-    knownBug('opens from inside a window never check other windows')
     const first = box.file('first.md')
     const second = box.file('second.md')
     const app = await launch(box, [first])
@@ -188,7 +192,6 @@ test.describe('opening from inside a window', () => {
   })
 
   test('clicking a sidebar file that is open in another window does not open a second copy', async () => {
-    knownBug('opens from inside a window never check other windows')
     const first = box.file('first.md')
     const app = await launch(box, [box.docs])
     const page = await app.firstWindow()
@@ -209,7 +212,6 @@ test.describe('opening from inside a window', () => {
   })
 
   test('two windows never end up editing the same file', async () => {
-    knownBug('opens from inside a window never check other windows')
     const shared = box.file('shared.md', '# Shared\n')
     const other = box.file('other.md')
     const app = await launch(box, [shared])
@@ -241,7 +243,6 @@ test.describe('session restore', () => {
   })
 
   test('a file opened at launch is in front of the windows the session restores', async () => {
-    knownBug('restored windows are shown after the launched file\'s window')
     const restored = [box.file('old-one.md'), box.file('old-two.md')]
     const wanted = box.file('wanted.md')
     box.settings({
@@ -258,12 +259,32 @@ test.describe('session restore', () => {
   })
 
   test('a file opened at launch does not replace a restored document', async () => {
-    knownBug('the launched file is delivered into a restored window instead of its own')
     const restored = box.file('restored.md')
     const wanted = box.file('wanted.md')
     box.settings({ windows: [{ bounds: { width: 900, height: 600 }, folder: null, file: restored }] })
     const app = await launch(box, [wanted])
     await expectDocuments(app, [restored, wanted])
+    await quit(app)
+  })
+
+  test('a file opened at launch does not hide a restored folder', async () => {
+    box.file('inside.md')
+    const wanted = box.file('wanted.md')
+    box.settings({ windows: [{ bounds: { width: 900, height: 600 }, folder: box.docs, file: null }] })
+    const app = await launch(box, [wanted])
+    await expectDocuments(app, [null, wanted])
+    const restored = await pageFor(app, null)
+    await expect(restored.locator('.tree-file', { hasText: 'inside.md' })).toBeVisible()
+    await quit(app)
+  })
+
+  test('a document saved in two windows is restored into one', async () => {
+    const twice = box.file('twice.md')
+    box.settings({
+      windows: [1, 2].map(() => ({ bounds: { width: 900, height: 600 }, folder: null, file: twice })),
+    })
+    const app = await launch(box)
+    await expectDocuments(app, [twice, null])
     await quit(app)
   })
 

@@ -2,6 +2,7 @@ import { api, unwrapIpcError } from '../api.ts'
 import { editorController } from '../editor/editorController.ts'
 import { documentName, useDocumentStore } from '../state/documentStore.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
+import type { OpenPathEvent } from '../../shared/api.ts'
 
 /**
  * Every destructive transition funnels through here. Main never caches the
@@ -16,6 +17,14 @@ export async function ensureClosable(): Promise<boolean> {
   if (choice === 'cancel') return false
   if (choice === 'dontSave') return true
   return save()
+}
+
+/**
+ * True when the buffer differs from what was loaded or last saved. Read from
+ * the editor itself, because the dirty flag in the store is debounced.
+ */
+export function hasUnsavedEdits(): boolean {
+  return editorController.getText() !== useDocumentStore.getState().savedText
 }
 
 async function adoptFile(filePath: string): Promise<void> {
@@ -40,12 +49,21 @@ export async function newDocument(): Promise<void> {
 interface OpenPathOptions {
   /** A file chosen directly should take the whole window unless a workspace is already open. */
   preferDocument?: boolean
+  /**
+   * Main already chose this window for the file (Finder, argv, a second
+   * launch), having checked every other window first.
+   */
+  routed?: boolean
 }
 
 export async function openPath(
   filePath: string,
-  { preferDocument = false }: OpenPathOptions = {},
+  { preferDocument = false, routed = false }: OpenPathOptions = {},
 ): Promise<void> {
+  // One document, one window: two editors on the same file would autosave
+  // over each other. Checked before the save prompt, which would otherwise
+  // ask about this window's document for nothing.
+  if (!routed && (await api.window.revealDocument(filePath).catch(() => false))) return
   if (!(await ensureClosable())) return
   try {
     await adoptFile(filePath)
@@ -56,6 +74,30 @@ export async function openPath(
     }
   } catch (error) {
     await api.dialog.showError({ title: 'Could not open file', message: unwrapIpcError(error) })
+  }
+}
+
+/**
+ * Handles a file or folder main routed to this window (Finder, argv, a second
+ * launch). Main chose this window because it looked empty; if the user has
+ * typed into it since main last heard, the file is passed back to be opened
+ * elsewhere, so it never costs them a save prompt or the text they were
+ * writing.
+ */
+export async function openRouted(event: OpenPathEvent): Promise<void> {
+  if (event.kind === 'file' && hasUnsavedEdits()) {
+    try {
+      await api.window.rerouteOpen(event.path)
+    } catch (error) {
+      await api.dialog.showError({ title: 'Could not open file', message: unwrapIpcError(error) })
+    }
+    return
+  }
+  try {
+    if (event.kind === 'dir') await adoptFolder(event.path)
+    else await openPath(event.path, { preferDocument: true, routed: true })
+  } finally {
+    await api.window.settleOpen()
   }
 }
 

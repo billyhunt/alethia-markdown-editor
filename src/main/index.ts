@@ -1,13 +1,13 @@
 import path from 'node:path'
 import { app, BrowserWindow, nativeImage } from 'electron'
-import { getQuitting, persistSessions, restoreWindows, setQuitting } from './windows.ts'
+import { getQuitting, persistSessions, raise, restoreWindows, setQuitting } from './windows.ts'
 import { registerIpcHandlers } from './ipc.ts'
 import { hardenSession } from './security.ts'
 import { buildApplicationMenu } from './menu.ts'
 import { flushSettings, getSettings, loadSettings } from './settings.ts'
 import { grantPersistedRecents } from './recents.ts'
 import { applyTheme } from './theme.ts'
-import { enqueueArgv, enqueuePath } from './openWith.ts'
+import { enqueueArgv, enqueuePath, hasStarted, startUp } from './openWith.ts'
 import { closeAllWatchers } from './watcher.ts'
 import { registerImageProtocol, registerImageProtocolScheme } from './images.ts'
 
@@ -30,19 +30,27 @@ if (profileOverride) app.setPath('userData', profileOverride)
 // a listener attached later would miss it entirely.
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
-  finderOpenQueue = finderOpenQueue.then(() => enqueuePath(filePath))
+  finderOpenQueue = finderOpenQueue
+    .then(async () => {
+      await enqueuePath(filePath)
+    })
+    // One bad path must not stall every Finder open after it.
+    .catch((error: unknown) => console.error('open-file failed', error))
 })
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', (_event, argv) => {
-    const [win] = BrowserWindow.getAllWindows()
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
-    }
-    void enqueueArgv(argv)
+    // Files on the command line are routed to their own windows, which come
+    // forward themselves. Launching again with nothing just surfaces the app,
+    // unless it is still starting up and about to show its windows anyway.
+    void enqueueArgv(argv).then((accepted) => {
+      if (accepted > 0 || !hasStarted()) return
+      const [win] = BrowserWindow.getAllWindows()
+      if (win) raise(win)
+      else restoreWindows()
+    })
   })
 
   app.whenReady().then(async () => {
@@ -65,7 +73,7 @@ if (!app.requestSingleInstanceLock()) {
     buildApplicationMenu()
     await finderOpenQueue
     await enqueueArgv(process.argv)
-    restoreWindows()
+    startUp()
 
     // macOS: clicking the dock icon with no windows open reopens one.
     app.on('activate', () => {
