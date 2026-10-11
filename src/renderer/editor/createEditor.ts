@@ -7,6 +7,7 @@ import { syntaxHighlighting } from '@codemirror/language'
 import { markdownExtension } from './markdownLanguage.ts'
 import { codeHighlightStyle, editorTheme } from './theme.ts'
 import { livePreview } from './extensions/index.ts'
+import { pasteMarkdown } from './extensions/pasteMarkdown.ts'
 
 export function createEditorState(doc: string, extra: Extension = []): EditorState {
   return EditorState.create({
@@ -25,6 +26,7 @@ export function createEditorState(doc: string, extra: Extension = []): EditorSta
       closeBrackets(),
       search({ top: true }),
       livePreview(),
+      pasteMarkdown,
       // markdown() already contributes markdownKeymap at high precedence
       // (Enter continues lists, Backspace removes markup), so it is not
       // repeated here.
