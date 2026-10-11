@@ -34,6 +34,12 @@ export function createEditorState(doc: string, extra: Extension = []): EditorSta
         autocorrect: 'on',
         autocapitalize: 'sentences',
       }),
+      // A file dropped on the editor opens, via the window's drop handler.
+      // CodeMirror would also paste the file's text in at the drop point,
+      // leaving the current document edited by accident.
+      EditorView.domEventHandlers({
+        drop: (event) => (event.dataTransfer?.files.length ?? 0) > 0,
+      }),
       editorTheme,
       extra,
     ],

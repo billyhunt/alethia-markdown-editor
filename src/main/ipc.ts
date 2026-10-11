@@ -18,6 +18,7 @@ import { grantFile, grantRoot, validatePath } from './paths.ts'
 import { takePendingPaths } from './openWith.ts'
 import { markForceClose, noteDocument, noteFolder, setQuitting, takeSession } from './windows.ts'
 import { showFileContextMenu } from './fileMenu.ts'
+import { startPathDrag } from './dragOut.ts'
 import { exportPdf } from './printing.ts'
 import { clearVersions, listVersions, readVersion } from './versions.ts'
 import { unwatchDocument, unwatchFolder, watchDocument, watchFolder } from './watcher.ts'
@@ -167,6 +168,13 @@ export function registerIpcHandlers(): void {
     if (stats.isDirectory()) return { path: grantRoot(target), kind: 'dir' }
     if (!isReadablePath(target)) throw new Error('EPERM: not a markdown file')
     return { path: grantFile(target), kind: 'file' }
+  })
+
+  ipcMain.on(IPC.appStartDrag, (event, target: unknown) => {
+    // A refused drag just does not start; the pointer is the only one waiting.
+    startPathDrag(event.sender, target).catch((error: unknown) => {
+      console.warn('drag refused:', error instanceof Error ? error.message : error)
+    })
   })
 
   // --- context menu --------------------------------------------------------
