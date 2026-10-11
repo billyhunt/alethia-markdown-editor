@@ -38,18 +38,18 @@ test.afterEach(() => {
 
 test.describe('first launch', () => {
   test('a new user lands on the welcome tour, not an empty editor', async () => {
-    knownBug('the welcome fetch is blocked by connect-src \'none\' in a built app (#41)')
     const app = await launch(box)
     const page = await app.firstWindow()
-    await expect.poll(() => editorText(page)).toContain('Alethia')
+    // Headings are uppercased by CSS, and innerText reports what is shown.
+    await expect.poll(() => editorText(page)).toMatch(/welcome to alethia/i)
     await quit(app)
   })
 
   test('the welcome tour is unsaved and never written into the app bundle', async () => {
-    knownBug('the welcome fetch is blocked by connect-src \'none\' in a built app (#41)')
     const app = await launch(box)
     const page = await app.firstWindow()
-    await expect.poll(() => editorText(page)).toContain('Alethia')
+    // Headings are uppercased by CSS, and innerText reports what is shown.
+    await expect.poll(() => editorText(page)).toMatch(/welcome to alethia/i)
     expect(await openFiles(app)).toEqual([null])
     await quit(app)
   })

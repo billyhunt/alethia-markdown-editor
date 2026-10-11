@@ -44,7 +44,7 @@ Open these files in Alethia to see its rendering, or browse their Markdown on Gi
 
 | Document | What it shows |
 |---|---|
-| [Welcome tour](public/sample.md) | A larger observing table, inline formatting, lists, code, and a first equation |
+| [Welcome tour](src/renderer/content/welcome.md) | A larger observing table, inline formatting, lists, code, and a first equation |
 | [Formula notebook](public/examples/formula-notebook.md) | Inline and display math, aligned equations, sums, matrices, and an integral |
 | [Project notes](public/examples/project-notes.md) | YAML front matter, a project board, nested checklists, heading levels, and code in three languages |
 
