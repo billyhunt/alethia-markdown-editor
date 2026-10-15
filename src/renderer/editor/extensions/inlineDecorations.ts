@@ -296,8 +296,8 @@ export function buildDecorations(view: EditorView): Built {
               built.decorations.push(lineDeco('cm-md-quote').range(state.doc.line(n).from))
             }
             // The `>` is never revealed: it is structure rather than text,
-            // and Enter and Backspace already maintain the quote via
-            // markdownKeymap.
+            // and Enter and Backspace already maintain the quote via the
+            // list keymap in markdownLanguage.ts.
             for (const mark of childrenNamed(node, 'QuoteMark')) {
               const line = state.doc.lineAt(mark.from)
               hideMarkerAndSpace(mark.from, mark.to, line.to)
