@@ -49,4 +49,15 @@ describe('quote marks in live preview', () => {
     expect(shown(doc)).not.toContain('>')
     expect(overlaps(doc)).toEqual([])
   })
+
+  it('hides the indent of a quoted list item\'s continuation lines', () => {
+    const doc = '> - one\n>   more\n> 1. two\n>    more\n'
+    // Numbers stay visible; only the bullet becomes a widget.
+    expect(shown(doc)).toBe('one\nmore\n1. two\nmore\n')
+    expect(overlaps(doc)).toEqual([])
+  })
+
+  it('still hides a quote nested in a quoted list item', () => {
+    expect(shown('> - one\n>   > inner\n')).toBe('one\ninner\n')
+  })
 })
