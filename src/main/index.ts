@@ -23,7 +23,9 @@ let finderOpenQueue = Promise.resolve()
 // End-to-end tests launch against a throwaway profile, so a run never reads or
 // overwrites a real session. The single-instance lock lives in userData too,
 // which keeps a test launch from handing its files to an installed copy.
-const profileOverride = process.env.ALETHIA_USER_DATA_DIR
+// Unpackaged builds only: in the shipped app the environment must not move
+// the profile, or the guard that keeps renderer writes out of it.
+const profileOverride = app.isPackaged ? undefined : process.env.ALETHIA_USER_DATA_DIR
 if (profileOverride) app.setPath('userData', profileOverride)
 
 // Registered at module top level: Finder fires open-file before 'ready', and
