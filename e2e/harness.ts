@@ -70,14 +70,33 @@ export async function launch(sandbox: Sandbox, args: string[] = []): Promise<Ele
   return electron.launch({ args: ['-r', RAISE_HOOK, MAIN, ...args], env, cwd: ROOT })
 }
 
+const QUIT_TIMEOUT = 10_000
+
 /**
  * Quits without leaving the next launch a stale lock. Closing a window asks
  * its renderer first, so a test that left a dirty buffer has to accept the
  * prompt it gets, which `quit` does by stubbing the dialog to Don't Save.
+ *
+ * An app that never finishes quitting is killed and the test fails, rather
+ * than hanging until Playwright's worker teardown gives up minutes later and
+ * leaving the process running under the next test.
  */
 export async function quit(app: ElectronApplication): Promise<void> {
-  await answerSaveChanges(app, "Don't Save").catch(() => undefined)
-  await app.close().catch(() => undefined)
+  const closing = (async () => {
+    await answerSaveChanges(app, "Don't Save").catch(() => undefined)
+    await app.close().catch(() => undefined)
+    return 'closed' as const
+  })()
+  let timer: NodeJS.Timeout | undefined
+  const stuck = new Promise<'stuck'>((resolve) => {
+    timer = setTimeout(() => resolve('stuck'), QUIT_TIMEOUT)
+  })
+  const outcome = await Promise.race([closing, stuck])
+  clearTimeout(timer)
+  if (outcome === 'stuck') {
+    app.process().kill('SIGKILL')
+    throw new Error(`The app did not quit within ${QUIT_TIMEOUT / 1000}s`)
+  }
 }
 
 export async function windows(app: ElectronApplication): Promise<WindowInfo[]> {
@@ -198,7 +217,10 @@ export async function answerSaveChanges(
         message: string
       }
       scope.__prompts.push(options.message)
-      return { response: Math.max(0, options.buttons.indexOf(label)), checkboxChecked: false }
+      const response = options.buttons.indexOf(label)
+      // Never fall back to another button: button 0 is Save, which writes.
+      if (response < 0) throw new Error(`No "${label}" button in: ${options.buttons.join(', ')}`)
+      return { response, checkboxChecked: false }
     }) as typeof dialog.showMessageBox
   }, button)
 }

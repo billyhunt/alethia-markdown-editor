@@ -45,7 +45,7 @@ test.describe('first launch', () => {
     await quit(app)
   })
 
-  test('the welcome tour is unsaved and never written into the app bundle', async () => {
+  test('the welcome tour opens unsaved, with no file behind it', async () => {
     const app = await launch(box)
     const page = await app.firstWindow()
     // Headings are uppercased by CSS, and innerText reports what is shown.
