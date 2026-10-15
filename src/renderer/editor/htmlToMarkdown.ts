@@ -14,7 +14,24 @@ export function htmlToMarkdown(html: string): string | null {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   if (!hasStructure(doc.body)) return null
   const markdown = converter().turndown(doc.body).trim()
-  return markdown ? markdown.replace(/\n{3,}/g, '\n\n') : null
+  return markdown ? collapseBlankLines(markdown) : null
+}
+
+/** One blank line at most between blocks; code keeps its blank lines. */
+function collapseBlankLines(markdown: string): string {
+  const out: string[] = []
+  let fenceOpen: string | null = null
+  for (const line of markdown.split('\n')) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
+    if (fenceOpen === null) {
+      if (marker) fenceOpen = marker
+      else if (line.trim() === '' && out.length > 0 && out[out.length - 1].trim() === '') continue
+    } else if (marker && marker[0] === fenceOpen[0] && marker.length >= fenceOpen.length && !line.trim().slice(marker.length).trim()) {
+      fenceOpen = null
+    }
+    out.push(line)
+  }
+  return out.join('\n')
 }
 
 const STRUCTURE = [
@@ -23,6 +40,7 @@ const STRUCTURE = [
 ].join(',')
 
 function hasStructure(body: HTMLElement): boolean {
+  if (body.querySelector(WORD_BULLET)) return true
   for (const element of body.querySelectorAll(STRUCTURE)) {
     // Google Docs wraps every copy in <b style="font-weight:normal">, and
     // JetBrains IDEs copy code as a styled <pre> with no <code> inside.
@@ -33,6 +51,9 @@ function hasStructure(body: HTMLElement): boolean {
   }
   return false
 }
+
+// Word writes this style exactly so on the span holding a list's bullet.
+const WORD_BULLET = 'span[style*="mso-list:Ignore"]'
 
 const styleOf = (element: Element): string => element.getAttribute('style') ?? ''
 const isPlainWrapper = (element: Element): boolean =>
@@ -133,7 +154,21 @@ function converter(): TurndownService {
       return text
     },
   })
-  // Word and Outlook draw list bullets as text in a hidden-on-screen span.
+  // Word and Outlook draw list bullets as text in a hidden-on-screen span,
+  // on paragraphs that are only styled to look like a list.
+  service.addRule('wordListItem', {
+    filter: (node) => node.nodeName === 'P' && !!node.querySelector(WORD_BULLET),
+    replacement: (content, node) => {
+      const element = node as Element
+      const level = Number(/level(\d+)/.exec(styleOf(element))?.[1]) || 1
+      const bullet = (element.querySelector(WORD_BULLET)?.textContent ?? '').replace(/\s/g, '')
+      const number = /^(\d+)[.)]$/.exec(bullet)?.[1]
+      const marker = number ? `${number}. ` : '- '
+      const previous = element.previousElementSibling
+      const continues = !!previous && previous.nodeName === 'P' && !!previous.querySelector(WORD_BULLET)
+      return `${continues ? '' : '\n\n'}${'   '.repeat(Math.min(level, 9) - 1)}${marker}${content.trim()}\n`
+    },
+  })
   service.addRule('wordListBullet', {
     filter: (node) => node.nodeName === 'SPAN' && /mso-list:\s*Ignore/i.test(styleOf(node)),
     replacement: () => '',

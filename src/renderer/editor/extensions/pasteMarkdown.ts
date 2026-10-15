@@ -12,9 +12,12 @@ const VERBATIM = new Set([
   'Table',
 ])
 
+/** Inline spans end at their closing mark: a caret just after one is outside. */
+const INLINE = new Set(['InlineCode', 'InlineMath'])
+
 function inVerbatim(state: EditorState, pos: number): boolean {
   for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, -1); node; node = node.parent) {
-    if (VERBATIM.has(node.name)) return true
+    if (VERBATIM.has(node.name) && !(INLINE.has(node.name) && node.to === pos)) return true
   }
   return false
 }

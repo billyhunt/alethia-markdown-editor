@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { htmlToMarkdown } from '../../src/renderer/editor/htmlToMarkdown.ts'
 
 // Chromium puts this wrapper around every HTML copy.
@@ -148,26 +148,45 @@ describe('pasting rich text as markdown', () => {
     const html = clip(
       '<p class="MsoListParagraph"><span style="mso-list:Ignore">·<span>    </span></span><b>Item</b> one</p>',
     )
-    expect(htmlToMarkdown(html)).toBe('**Item** one')
+    expect(htmlToMarkdown(html)).toBe('- **Item** one')
+  })
+
+  it('turns Word list paragraphs into a list, numbered and nested', () => {
+    const item = (cls: string, level: number, bullet: string, text: string) =>
+      `<p class="${cls}" style="mso-list:l0 level${level} lfo1"><![if !supportLists]>` +
+      `<span style="mso-list:Ignore">${bullet}<span style="font:7.0pt">&nbsp;&nbsp;&nbsp; </span></span>` +
+      `<![endif]>${text}</p>\n`
+    const html = clip(
+      '<p>Before</p>\n' +
+        item('MsoListParagraphCxSpFirst', 1, '1.', 'One') +
+        item('MsoListParagraphCxSpMiddle', 2, 'o', '<b>Sub</b>') +
+        item('MsoListParagraphCxSpLast', 1, '2.', 'Two') +
+        '<p>After</p>',
+    )
+    expect(htmlToMarkdown(html)).toBe(['Before', '', '1. One', '   - **Sub**', '2. Two', '', 'After'].join('\n'))
+  })
+
+  it('keeps the blank lines inside a pasted code block', () => {
+    const html = clip('<p><b>Run</b></p><p></p><p></p><pre><code>a\n\n\n\nb</code></pre>')
+    expect(htmlToMarkdown(html)).toBe('**Run**\n\n```\na\n\n\n\nb\n```')
   })
 
   it('numbers from 1 when a list start is not a number', () => {
     expect(htmlToMarkdown(clip('<ol start="x"><li>a</li></ol>'))).toBe('1. a')
   })
 
-  it('converts a large spreadsheet paste in linear time', () => {
+  it('measures a large spreadsheet paste once, not once per row', () => {
     const row = (i: number) => `<tr>${Array.from({ length: 8 }, (_, c) => `<td>${i}-${c}</td>`).join('')}</tr>`
-    const table = (rows: number) => clip(`<table>${Array.from({ length: rows }, (_, i) => row(i)).join('')}</table>`)
-    const time = (rows: number) => {
-      const started = performance.now()
-      htmlToMarkdown(table(rows))
-      return performance.now() - started
+    const html = clip(`<table>${Array.from({ length: 300 }, (_, i) => row(i)).join('')}</table>`)
+    // Counting the row lookups rather than timing them: a timing check flakes
+    // on a busy machine.
+    const lookup = vi.spyOn(Element.prototype, 'querySelectorAll')
+    try {
+      expect(htmlToMarkdown(html)?.split('\n')).toHaveLength(301)
+      expect(lookup.mock.calls.filter(([selector]) => selector === 'tr')).toHaveLength(1)
+    } finally {
+      lookup.mockRestore()
     }
-    time(200) // warm up
-    const small = time(500)
-    const large = time(2000)
-    // Four times the rows; quadratic work would take about sixteen times as long.
-    expect(large).toBeLessThan(small * 8 + 50)
   })
 
   it('keeps empty cells and skips empty rows', () => {
