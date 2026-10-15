@@ -25,8 +25,11 @@ import {
  * that file in exactly one window, and that window in front.
  */
 
-/** Marks a flow that fails today because of a bug; remove when it is fixed. */
-const knownBug = (reason: string): void => test.fail(true, reason)
+/**
+ * Marks a flow that fails today because of a bug; remove when it is fixed.
+ * Exported so the suite still typechecks once no flow needs it.
+ */
+export const knownBug = (reason: string): void => test.fail(true, reason)
 
 let box: Sandbox
 test.beforeEach(() => {
