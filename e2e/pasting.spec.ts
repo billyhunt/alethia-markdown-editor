@@ -71,6 +71,21 @@ test('plain text with no HTML pastes unchanged', async () => {
   await quit(app)
 })
 
+test('just after inline code the rich text is still converted', async () => {
+  const { app, page, file } = await openAtEnd('after.md', 'Run `npm ci`')
+  await paste(page, { html: '<meta charset="utf-8"><p><strong>first</strong></p>', text: 'first' })
+  await savedText(app, page, file, 'Run `npm ci`**first**')
+  await quit(app)
+})
+
+test('inside inline code the plain text is pasted verbatim', async () => {
+  const { app, page, file } = await openAtEnd('inside.md', 'Run `npm ci`')
+  await page.keyboard.press('ArrowLeft')
+  await paste(page, { html: '<meta charset="utf-8"><p><strong> --x</strong></p>', text: ' --x' })
+  await savedText(app, page, file, 'Run `npm ci --x`')
+  await quit(app)
+})
+
 test('inside display math the plain text is pasted verbatim', async () => {
   const { app, page, file } = await openAtEnd('math.md', '$$\nx = ')
   await paste(page, { html: '<meta charset="utf-8"><p><em>a</em> * b</p>', text: 'a * b' })
