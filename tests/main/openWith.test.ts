@@ -223,6 +223,29 @@ describe('opening files at launch', () => {
     expect(lastRaised()).toBe(launched.id)
   })
 
+  it('keeps the launched file in front when a restored window paints after its fallback', async () => {
+    vi.useFakeTimers()
+    try {
+      electron.settings.windows = [session({ file: file('old.md') }), session({ file: file('two.md') })]
+      await openWith.enqueuePath(file('one.md'))
+      openWith.startUp()
+      const [first, second, launched] = all()
+
+      paint(launched)
+      vi.advanceTimersByTime(5000) // both restored windows miss the fallback
+      expect(lastRaised()).toBe(launched.id)
+      paint(first)
+      vi.runAllTicks()
+      await vi.runAllTimersAsync()
+      expect(lastRaised()).toBe(launched.id)
+      paint(second)
+      await vi.runAllTimersAsync()
+      expect(lastRaised()).toBe(launched.id)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('opens no stray empty window when the only thing to show is the launched file', async () => {
     await openWith.enqueuePath(file('one.md'))
     openWith.startUp()

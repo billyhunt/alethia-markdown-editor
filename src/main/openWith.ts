@@ -120,13 +120,23 @@ function raiseAfterEveryWindowShows(front: BrowserWindow): void {
     return
   }
   for (const win of waiting) {
+    let counted = false
     // A window that never paints must not leave the front one buried.
-    const fallback = setTimeout(done, 5000)
+    const fallback = setTimeout(() => {
+      counted = true
+      done()
+    }, 5000)
     // Registered after createWindow's own handler, so this runs once the
     // window's show() has; setImmediate keeps it out of that call stack.
     win.once('ready-to-show', () => {
       clearTimeout(fallback)
-      setImmediate(done)
+      if (!counted) {
+        counted = true
+        setImmediate(done)
+      } else if (remaining === 0) {
+        // Painted after its fallback fired, so it just landed on top.
+        setImmediate(() => raise(front))
+      }
     })
   }
 }
