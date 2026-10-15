@@ -27,8 +27,8 @@ export function createEditorState(doc: string, extra: Extension = []): EditorSta
       search({ top: true }),
       livePreview(),
       pasteMarkdown,
-      // markdown() already contributes markdownKeymap at high precedence
-      // (Enter continues lists, Backspace removes markup), so it is not
+      // markdownExtension carries the list keys at high precedence (Enter
+      // continues lists, Backspace removes markup), so they are not
       // repeated here.
       keymap.of([...closeBracketsKeymap, ...searchKeymap, ...defaultKeymap, ...historyKeymap]),
       EditorView.contentAttributes.of({
