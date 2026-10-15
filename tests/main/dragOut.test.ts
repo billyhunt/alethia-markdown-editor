@@ -43,7 +43,7 @@ const drag = (target: unknown) => startPathDrag(contents as never, target)
 describe('dragging a sidebar row out of the window', () => {
   it('starts a native drag of the file, with an icon', async () => {
     const file = path.join(granted, 'a.md')
-    await drag({ path: file })
+    await expect(drag({ path: file })).resolves.toBe(file)
     expect(contents.startDrag).toHaveBeenCalledWith({ file, icon: expect.anything() })
   })
 

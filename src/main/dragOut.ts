@@ -12,16 +12,19 @@ import { assertReadable, assertReadableDir } from './paths.ts'
  * sidebar would list or folders: whether the path is a folder is decided
  * here, never taken from the renderer.
  */
-export async function startPathDrag(contents: WebContents, target: unknown): Promise<void> {
+export async function startPathDrag(contents: WebContents, target: unknown): Promise<string | null> {
   const input = (typeof target === 'object' && target !== null ? target : {}) as { path?: unknown }
   // The grant is checked before the path is touched at all.
   const granted = await assertReadableDir(input.path)
   const kind = (await fs.stat(granted)).isDirectory() ? 'dir' : 'file'
   const filePath = kind === 'dir' ? granted : await assertReadable(granted)
-  if (contents.isDestroyed()) return
+  if (contents.isDestroyed()) return null
   // The pointer is already moving, so the drag never waits on an icon lookup:
   // Finder's icon is used once it is known, a plain page until then.
   contents.startDrag({ file: filePath, icon: iconFor(filePath, kind) })
+  // The grant check may have resolved the path; this is the one a drop back
+  // on the window will carry.
+  return filePath
 }
 
 // A 32px page, drawn rather than shipped as a file: startDrag on macOS needs a
