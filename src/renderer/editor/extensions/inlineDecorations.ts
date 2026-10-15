@@ -147,7 +147,9 @@ export function buildDecorations(view: EditorView): Built {
         if (claimedLines.has(n)) continue
         claimedLines.add(n)
         const line = state.doc.line(n)
-        const leading = line.text.length - line.text.trimStart().length
+        // Inside a quote the line starts with its `>` markers, which count
+        // toward the item's content column like spaces do.
+        const leading = /^[ \t>]*/.exec(line.text)![0].length
         built.decorations.push(
           Decoration.line({
             class: 'cm-md-li',
