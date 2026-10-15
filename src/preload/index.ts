@@ -65,8 +65,8 @@ const api: MarkdownApi = {
   app: {
     rendererReady: () => ipcRenderer.invoke(IPC.appRendererReady),
     grantDroppedPath: (filePath) => ipcRenderer.invoke(IPC.appGrantDroppedPath, filePath),
-    // Sent rather than invoked: the drag is under way and nothing waits on it.
-    startDrag: (target) => ipcRenderer.send(IPC.appStartDrag, target),
+    // The drag never waits on the reply; it only names the path that left.
+    startDrag: (target) => ipcRenderer.invoke(IPC.appStartDrag, target),
   },
   versions: {
     list: (filePath) => ipcRenderer.invoke(IPC.versionsList, filePath),

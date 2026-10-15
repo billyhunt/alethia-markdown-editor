@@ -197,8 +197,9 @@ export interface MarkdownApi {
     /**
      * Turns a sidebar drag into a native file drag, so dropping it in a
      * terminal types its path. Call from dragstart, after preventDefault.
+     * Resolves with the path actually dragged, or null if it was refused.
      */
-    startDrag(target: { path: string }): void
+    startDrag(target: { path: string }): Promise<string | null>
   }
 
   versions: {

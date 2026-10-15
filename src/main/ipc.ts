@@ -224,12 +224,13 @@ export function registerIpcHandlers(): void {
     return { path: grantFile(target), kind: 'file' }
   })
 
-  ipcMain.on(IPC.appStartDrag, (event, target: unknown) => {
+  ipcMain.handle(IPC.appStartDrag, (event, target: unknown) =>
     // A refused drag just does not start; the pointer is the only one waiting.
     startPathDrag(event.sender, target).catch((error: unknown) => {
       console.warn('drag refused:', error instanceof Error ? error.message : error)
-    })
-  })
+      return null
+    }),
+  )
 
   // --- context menu --------------------------------------------------------
   ipcMain.handle(IPC.menuFileContext, (event, target: unknown) =>

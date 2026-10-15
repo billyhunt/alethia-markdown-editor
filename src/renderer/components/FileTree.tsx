@@ -4,7 +4,7 @@ import { openPath, refreshFolder, renameFile, forgetTrashedFile } from '../servi
 import { useDocumentStore } from '../state/documentStore.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import { ChevronIcon, FileIcon } from './icons.tsx'
-import { beginDragOut } from '../services/dragOut.ts'
+import { beginDragOut, draggedAs } from '../services/dragOut.ts'
 import type { FileNode } from '../../shared/api'
 
 interface Props {
@@ -42,7 +42,9 @@ export default function FileTree({ node, depth }: Props) {
   const onDragStart = (event: React.DragEvent) => {
     event.preventDefault()
     beginDragOut(node.path)
-    api.app.startDrag({ path: node.path })
+    void api.app.startDrag({ path: node.path }).then((dragged) => {
+      if (dragged) draggedAs(node.path, dragged)
+    })
   }
 
   if (renaming) {
