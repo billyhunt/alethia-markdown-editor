@@ -1,6 +1,7 @@
+import path from 'node:path'
 import { app, Menu, shell, type MenuItemConstructorOptions, type BrowserWindow } from 'electron'
 import { sendCommand, focusedWindow } from './commands.ts'
-import { createWindow } from './windows.ts'
+import { createWindow, deliver } from './windows.ts'
 import { applyTheme } from './theme.ts'
 import { getSettings, patchSettings } from './settings.ts'
 import type { HostCommand } from '../shared/ipc.ts'
@@ -38,6 +39,33 @@ function dispatch(win: BrowserWindow | undefined, command: HostCommand): void {
   if (command === 'file:new' || command === 'file:open' || command === 'file:openFolder') {
     const created = createWindow()
     created.webContents.once('did-finish-load', () => sendCommand(created, command))
+  }
+}
+
+/**
+ * Recent workspace folders, so switching between them never needs the
+ * directory dialog. The renderer already knows how to adopt a folder handed
+ * to it as an open path, so this reuses that route rather than inventing a
+ * command that carries an argument.
+ */
+function recentFoldersSubmenu(): MenuItemConstructorOptions {
+  const recents = getSettings().recentFolders
+  if (recents.length === 0) {
+    return { label: 'Open Recent Folder', enabled: false, submenu: [] }
+  }
+  return {
+    label: 'Open Recent Folder',
+    submenu: recents.map((dir) => ({
+      label: path.basename(dir) || dir,
+      sublabel: path.dirname(dir),
+      click: (_item, win) => {
+        // Delivered like any other routed open, so the window is reserved for
+        // the folder until the renderer has settled it, and a window that is
+        // not listening yet queues it.
+        const event = { path: dir, kind: 'dir' } as const
+        deliver((win as BrowserWindow | undefined) ?? focusedWindow() ?? createWindow(), event)
+      },
+    })),
   }
 }
 
@@ -85,6 +113,7 @@ export function buildApplicationMenu(): void {
         cmd('Open Folder…', 'file:openFolder', 'CmdOrCtrl+Shift+O'),
         // macOS populates this natively from app.addRecentDocument.
         { role: 'recentDocuments', submenu: [{ role: 'clearRecentDocuments' }] },
+        recentFoldersSubmenu(),
         { type: 'separator' },
         // Cmd+W closes the window, as it does everywhere else on macOS.
         // Closing just the document is the rarer act, so it takes the

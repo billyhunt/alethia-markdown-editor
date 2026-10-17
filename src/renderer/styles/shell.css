@@ -93,6 +93,44 @@ body.is-fullscreen .main-pane {
   padding-top: 0;
 }
 
+/* The workspace switcher, sitting above the tabs like a vault name. */
+.sidebar-workspace {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  width: 100%;
+  border: none;
+  border-bottom: var(--rule) solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  cursor: pointer;
+}
+
+.sidebar-workspace:hover {
+  background: var(--selection);
+}
+
+.sidebar-workspace-caret {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.sidebar-recents-heading {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .sidebar-tabs {
   display: flex;
   gap: 0;

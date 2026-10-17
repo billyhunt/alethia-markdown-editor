@@ -4,6 +4,9 @@ import type { LineEnding } from '../../shared/api'
 export interface DocumentState {
   /** Absolute path, or null for a document that has never been saved. */
   filePath: string | null
+  documentId: string | null
+  /** Bumped whenever another document takes over this window. */
+  revision: number
   /** The text as last read from or written to disk. */
   savedText: string
   /** mtime of the last read/write; null for an unsaved document. */
@@ -11,14 +14,59 @@ export interface DocumentState {
   /** Preserved from the file so saving does not rewrite every line. */
   lineEnding: LineEnding
   dirty: boolean
+  /**
+   * The path was chosen for the user from the document's title, and no one
+   * has since picked a name themselves. While this holds, the file keeps
+   * following the title.
+   */
+  namedByTitle: boolean
+  /**
+   * The file name the title last produced, which is not always the name on
+   * disk: a taken name gets numbered. Comparing the next title against this
+   * rather than against the file's basename is what keeps a numbered
+   * document from trying, and failing, to rename itself on every save.
+   */
+  autoNameBase: string | null
+  /**
+   * This buffer may be filed automatically once it has a title. True only for
+   * a document that started empty: a buffer that arrived with content it did
+   * not ask for -- the welcome tour, edits rescued from a trashed file -- is
+   * not something to write into the user's folder behind their back.
+   */
+  autoNameable: boolean
 
   load: (doc: {
     filePath: string | null
+    documentId?: string | null
     text: string
     mtimeMs: number | null
     lineEnding?: LineEnding
+    namedByTitle?: boolean
+    autoNameBase?: string | null
+    /** Defaults to true for an empty untitled buffer. */
+    autoNameable?: boolean
   }) => void
-  markSaved: (saved: { filePath: string; text: string; mtimeMs: number }) => void
+  markSaved: (saved: {
+    filePath: string
+    text: string
+    mtimeMs: number
+    /** Left alone when omitted, so a plain save does not change ownership. */
+    namedByTitle?: boolean
+    autoNameBase?: string | null
+  }) => void
+  /**
+   * The file moved. Its content, and therefore its dirty state, did not, and
+   * it is still the same document, so `revision` is not bumped.
+   */
+  setPath: (
+    filePath: string,
+    naming: { namedByTitle: boolean; autoNameBase?: string | null; documentId: string | null },
+  ) => void
+  /**
+   * Records the name the title produced even when the rename was refused, so
+   * a name that can never be taken is not attempted again and again.
+   */
+  setAutoNameBase: (autoNameBase: string | null) => void
   setDirty: (dirty: boolean) => void
   /** Refreshes mtime after the user chooses to keep their version of a file. */
   syncMtime: (mtimeMs: number | null) => void
@@ -26,15 +74,53 @@ export interface DocumentState {
 
 export const useDocumentStore = create<DocumentState>((set) => ({
   filePath: null,
+  documentId: null,
+  revision: 0,
   savedText: '',
   mtimeMs: null,
   lineEnding: '\n',
   dirty: false,
+  namedByTitle: false,
+  autoNameBase: null,
+  autoNameable: true,
 
-  load: ({ filePath, text, mtimeMs, lineEnding }) =>
-    set({ filePath, savedText: text, mtimeMs, lineEnding: lineEnding ?? '\n', dirty: false }),
-  markSaved: ({ filePath, text, mtimeMs }) =>
-    set({ filePath, savedText: text, mtimeMs, dirty: false }),
+  load: ({ filePath, documentId, text, mtimeMs, lineEnding, namedByTitle, autoNameBase, autoNameable }) =>
+    set((state) => ({
+      filePath,
+      documentId:
+        documentId === undefined
+          ? state.filePath === filePath ? state.documentId : null
+          : documentId,
+      revision: state.revision + 1,
+      savedText: text,
+      mtimeMs,
+      lineEnding: lineEnding ?? '\n',
+      dirty: false,
+      namedByTitle: namedByTitle ?? false,
+      // A reload keeps the naming it had; a different document starts over.
+      autoNameBase: autoNameBase ?? (namedByTitle ? state.autoNameBase : null),
+      autoNameable: autoNameable ?? (filePath === null && text === ''),
+    })),
+  // Main resolves relative links against the path behind documentId, so an id
+  // must never outlive a change of path (Save As) while its re-watch is pending.
+  markSaved: ({ filePath, text, mtimeMs, namedByTitle, autoNameBase }) =>
+    set((state) => ({
+      filePath,
+      documentId: state.filePath === filePath ? state.documentId : null,
+      savedText: text,
+      mtimeMs,
+      dirty: false,
+      namedByTitle: namedByTitle ?? state.namedByTitle,
+      autoNameBase: autoNameBase ?? state.autoNameBase,
+    })),
+  setPath: (filePath, { namedByTitle, autoNameBase, documentId }) =>
+    set((state) => ({
+      filePath,
+      documentId,
+      namedByTitle,
+      autoNameBase: namedByTitle ? (autoNameBase ?? state.autoNameBase) : null,
+    })),
+  setAutoNameBase: (autoNameBase) => set({ autoNameBase }),
   setDirty: (dirty) => set({ dirty }),
   syncMtime: (mtimeMs) => set({ mtimeMs }),
 }))

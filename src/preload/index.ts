@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import type { MarkdownApi, Unsubscribe } from '../shared/api.ts'
 
+// This private invoke is available only to preload code. The page cannot
+// read the value or call the IPC channel directly.
+const dropTokenPromise = ipcRenderer.invoke(IPC.appPreloadToken) as Promise<string>
+
 /**
  * The only file on the renderer side allowed to touch ipcRenderer.
  *
@@ -32,6 +36,7 @@ const api: MarkdownApi = {
       ipcRenderer.invoke(IPC.fsWriteFile, filePath, content, opts ?? {}),
     stat: (filePath) => ipcRenderer.invoke(IPC.fsStat, filePath),
     rename: (filePath, name) => ipcRenderer.invoke(IPC.fsRename, filePath, name),
+    createFile: (opts) => ipcRenderer.invoke(IPC.fsCreateFile, opts),
   },
   folder: {
     list: (root) => ipcRenderer.invoke(IPC.folderList, root),
@@ -46,6 +51,9 @@ const api: MarkdownApi = {
     list: () => ipcRenderer.invoke(IPC.recentsList),
     add: (filePath) => ipcRenderer.invoke(IPC.recentsAdd, filePath),
     clear: () => ipcRenderer.invoke(IPC.recentsClear),
+    listFolders: () => ipcRenderer.invoke(IPC.recentsListFolders),
+    addFolder: (dirPath) => ipcRenderer.invoke(IPC.recentsAddFolder, dirPath),
+    clearFolders: () => ipcRenderer.invoke(IPC.recentsClearFolders),
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
@@ -65,7 +73,13 @@ const api: MarkdownApi = {
   },
   app: {
     rendererReady: () => ipcRenderer.invoke(IPC.appRendererReady),
-    grantDroppedPath: (filePath) => ipcRenderer.invoke(IPC.appGrantDroppedPath, filePath),
+    grantDroppedPath: (file) => {
+      const filePath = webUtils.getPathForFile(file)
+      if (!filePath) return Promise.reject(new Error('EPERM: untrusted drop'))
+      return dropTokenPromise.then((token) => ipcRenderer.invoke(IPC.appGrantDroppedPath, filePath, token))
+    },
+    openLinkedFile: (href, documentId) => ipcRenderer.invoke(IPC.appOpenLinkedFile, href, documentId),
+    startDrag: (target) => ipcRenderer.invoke(IPC.appStartDrag, target),
   },
   versions: {
     list: (filePath) => ipcRenderer.invoke(IPC.versionsList, filePath),
@@ -77,13 +91,12 @@ const api: MarkdownApi = {
   },
   menu: {
     fileContext: (target) => ipcRenderer.invoke(IPC.menuFileContext, target),
+    folderSwitcher: (opts) => ipcRenderer.invoke(IPC.menuFolderSwitcher, opts ?? {}),
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke(IPC.shellOpenExternal, url),
     showItemInFolder: (filePath) => ipcRenderer.invoke(IPC.shellShowItemInFolder, filePath),
   },
-  // File.path was removed from Electron; this is the supported replacement.
-  getPathForFile: (file) => webUtils.getPathForFile(file),
   on: {
     command: (cb) => subscribe(IPC.hostCommand, cb),
     openPath: (cb) => subscribe(IPC.hostOpenPath, cb),
@@ -91,6 +104,7 @@ const api: MarkdownApi = {
     folderTree: (cb) => subscribe(IPC.hostFolderTree, cb),
     closeRequested: (cb) => subscribe(IPC.hostCloseRequested, cb),
     fullScreenChanged: (cb) => subscribe(IPC.hostFullScreenChanged, cb),
+    recentFoldersChanged: (cb) => subscribe(IPC.hostRecentFoldersChanged, cb),
   },
 }
 

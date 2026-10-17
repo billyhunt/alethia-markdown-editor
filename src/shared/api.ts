@@ -65,6 +65,22 @@ export interface StatResult {
   size: number
 }
 
+export interface CreateFileOptions {
+  /** A granted directory. Null or omitted uses the app's default folder. */
+  dir?: string | null
+  /** A basename, not a path. A markdown extension is added if missing. */
+  name: string
+  /** Written as part of creating the file, so no empty file can be left. */
+  content?: string
+  lineEnding?: LineEnding
+}
+
+export interface CreateFileResult {
+  /** The path actually created, which may be numbered. */
+  path: string
+  mtimeMs: number
+}
+
 export type SaveChangesChoice = 'save' | 'dontSave' | 'cancel'
 
 export interface SaveAsOptions {
@@ -80,6 +96,12 @@ export interface OpenPathEvent {
   path: string
   kind: PathKind
 }
+
+/**
+ * What a dropped file turned out to be. `self` is the sidebar's own drag
+ * released back over the window (main started it): nothing to open.
+ */
+export type DroppedPathResult = OpenPathEvent | { kind: 'self' }
 
 export interface CloseRequestedEvent {
   reason: 'close' | 'quit'
@@ -106,6 +128,15 @@ export type FileContextResult =
   /** Show this file's version history, which lives in the renderer. */
   | { action: 'history'; path: string }
   | { action: 'trashed'; path: string }
+
+/** What the workspace switcher menu was asked to do. */
+export type FolderSwitcherResult =
+  | { action: 'cancelled' }
+  /** Adopt this already-granted folder as the workspace. */
+  | { action: 'switch'; path: string }
+  /** Show the directory dialog instead. */
+  | { action: 'open' }
+  | { action: 'cleared' }
 
 /** One past state of a document, newest first in listings. */
 export interface DocumentVersion {
@@ -146,6 +177,11 @@ export interface MarkdownApi {
      * a markdown extension is enforced. Resolves the new absolute path.
      */
     rename(path: string, name: string): Promise<RenameFileResult>
+    /**
+     * Creates a markdown file holding `content` and grants it, numbering the
+     * name if it is taken. Never overwrites; creation is exclusive.
+     */
+    createFile(opts: CreateFileOptions): Promise<CreateFileResult>
   }
 
   folder: {
@@ -157,7 +193,7 @@ export interface MarkdownApi {
 
   document: {
     /** Replaces any previous document watch. Emits on.fileChanged. */
-    watch(path: string): Promise<void>
+    watch(path: string): Promise<string | null>
     unwatch(): Promise<void>
   }
 
@@ -165,6 +201,10 @@ export interface MarkdownApi {
     list(): Promise<string[]>
     add(path: string): Promise<void>
     clear(): Promise<void>
+    /** Workspace folders, newest first, with vanished ones already dropped. */
+    listFolders(): Promise<string[]>
+    addFolder(path: string): Promise<void>
+    clearFolders(): Promise<void>
   }
 
   settings: {
@@ -206,7 +246,14 @@ export interface MarkdownApi {
     /** Call once after listeners are registered. Flushes queued open-with paths. */
     rendererReady(): Promise<RendererReadyResult>
     /** Validates and grants a dropped path. Rejects non-markdown files. */
-    grantDroppedPath(path: string): Promise<OpenPathEvent>
+    grantDroppedPath(file: File): Promise<DroppedPathResult>
+    openLinkedFile(href: string, documentId: string): Promise<void>
+    /**
+     * Turns a sidebar drag into a native file drag, so dropping it in a
+     * terminal types its path. Call from dragstart, after preventDefault.
+     * A refused drag simply does not start.
+     */
+    startDrag(target: { path: string }): Promise<void>
   }
 
   versions: {
@@ -230,6 +277,11 @@ export interface MarkdownApi {
      * action in main. Resolves once the menu closes.
      */
     fileContext(target: { path: string; kind: PathKind }): Promise<FileContextResult>
+    /**
+     * Pops the workspace switcher: recent folders, plus Open Folder. Resolves
+     * once the menu closes.
+     */
+    folderSwitcher(opts?: { current?: string | null }): Promise<FolderSwitcherResult>
   }
 
   shell: {
@@ -238,9 +290,6 @@ export interface MarkdownApi {
     showItemInFolder(path: string): Promise<void>
   }
 
-  /** Synchronous; wraps electron.webUtils.getPathForFile for drag and drop. */
-  getPathForFile(file: File): string
-
   on: {
     command(cb: (cmd: HostCommand) => void): Unsubscribe
     openPath(cb: (e: OpenPathEvent) => void): Unsubscribe
@@ -248,5 +297,7 @@ export interface MarkdownApi {
     folderTree(cb: (t: FolderTree) => void): Unsubscribe
     closeRequested(cb: (e: CloseRequestedEvent) => void): Unsubscribe
     fullScreenChanged(cb: (isFullScreen: boolean) => void): Unsubscribe
+    /** Recents are application-wide; every window hears about a change. */
+    recentFoldersChanged(cb: (folders: string[]) => void): Unsubscribe
   }
 }

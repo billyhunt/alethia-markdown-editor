@@ -4,6 +4,8 @@ import path from 'node:path'
 import { app } from 'electron'
 import {
   DEFAULT_SETTINGS,
+  MAX_RECENTS,
+  MAX_RECENT_FOLDERS,
   type Settings,
   type SettingsPatch,
   type WindowSession,
@@ -58,7 +60,14 @@ function coerce(raw: unknown): Settings {
         : DEFAULT_SETTINGS.toolbarVisible,
     autosave: typeof input.autosave === 'boolean' ? input.autosave : DEFAULT_SETTINGS.autosave,
     recentFiles: Array.isArray(input.recentFiles)
-      ? input.recentFiles.filter((entry): entry is string => typeof entry === 'string').slice(0, 20)
+      ? input.recentFiles
+          .filter((entry): entry is string => typeof entry === 'string')
+          .slice(0, MAX_RECENTS)
+      : [],
+    recentFolders: Array.isArray(input.recentFolders)
+      ? input.recentFolders
+          .filter((entry): entry is string => typeof entry === 'string')
+          .slice(0, MAX_RECENT_FOLDERS)
       : [],
   }
 }
@@ -84,6 +93,47 @@ export function patchSettings(patch: SettingsPatch): Settings {
   }
   scheduleSave()
   return cache
+}
+
+const SIDEBAR_WIDTH_RANGE = { min: 120, max: 800 } as const
+
+/**
+ * The renderer may change exactly what it owns: sidebar layout, toolbar
+ * visibility and autosave. Theme, window bounds, recents and window sessions
+ * are written by main only (menu, window lifecycle, recents handlers), so a
+ * compromised renderer cannot poison what feeds createWindow or session
+ * restore on the next launch. Values are validated and only known keys are
+ * copied; anything else is refused.
+ */
+export function patchUiSettings(patch: Record<string, unknown>): Settings {
+  const allowed = new Set(['sidebar', 'toolbarVisible', 'autosave'])
+  for (const key of Object.keys(patch)) if (!allowed.has(key)) throw new Error(`EPERM: setting ${key} is main-owned`)
+
+  const clean: SettingsPatch = {}
+  if ('toolbarVisible' in patch) {
+    if (typeof patch.toolbarVisible !== 'boolean') throw new TypeError('toolbarVisible must be a boolean')
+    clean.toolbarVisible = patch.toolbarVisible
+  }
+  if ('autosave' in patch) {
+    if (typeof patch.autosave !== 'boolean') throw new TypeError('autosave must be a boolean')
+    clean.autosave = patch.autosave
+  }
+  if ('sidebar' in patch) {
+    const raw = patch.sidebar
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new TypeError('sidebar must be an object')
+    const sidebar: Partial<Settings['sidebar']> = {}
+    const { visible, width } = raw as Record<string, unknown>
+    if (visible !== undefined) {
+      if (typeof visible !== 'boolean') throw new TypeError('sidebar.visible must be a boolean')
+      sidebar.visible = visible
+    }
+    if (width !== undefined) {
+      if (typeof width !== 'number' || !Number.isFinite(width)) throw new TypeError('sidebar.width must be a finite number')
+      sidebar.width = Math.min(SIDEBAR_WIDTH_RANGE.max, Math.max(SIDEBAR_WIDTH_RANGE.min, Math.round(width)))
+    }
+    clean.sidebar = sidebar
+  }
+  return patchSettings(clean)
 }
 
 function scheduleSave(): void {

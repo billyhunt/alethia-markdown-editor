@@ -6,10 +6,22 @@ import fs from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { assertReadable, assertReadableDir, assertWritable, assertWritableSibling, grantFile } from './paths.ts'
+import { app } from 'electron'
+import {
+  assertReadable,
+  assertReadableDir,
+  assertWritable,
+  assertWritableNewFile,
+  assertWritableSibling,
+  grantFile,
+  grantRoot,
+  resolveWriteTarget,
+} from './paths.ts'
 import { moveVersionHistory, snapshotVersion } from './versions.ts'
 import { MARKDOWN_EXTENSIONS } from '../shared/markdown.ts'
 import type {
+  CreateFileOptions,
+  CreateFileResult,
   LineEnding,
   ReadFileResult,
   StatResult,
@@ -196,7 +208,7 @@ export async function writeTextFile(
     // Written in place rather than temp-and-rename: rename would replace
     // symlinks, drop Finder tags and xattrs, and change the inode, which
     // confuses other editors watching the same file.
-    await fs.writeFile(filePath, onDisk, 'utf8')
+    await fs.writeFile(await resolveWriteTarget(filePath), onDisk, 'utf8')
     const stats = await fs.stat(filePath)
     rememberState(filePath, onDisk, stats.mtimeMs)
     suppressUntil.set(filePath, Date.now() + 500)
@@ -382,6 +394,104 @@ export async function renameFile(input: unknown, name: unknown): Promise<RenameF
     }
     return { path: to, ...(historyPath ? { historyPath } : {}) }
   })
+}
+
+/** Where automatically named documents go when no folder is open. */
+async function defaultDocumentsDir(): Promise<string> {
+  const dir = path.join(app.getPath('documents'), 'Alethia')
+  await fs.mkdir(dir, { recursive: true })
+  // The app made this folder, so it is a source main controls.
+  return grantRoot(dir)
+}
+
+const withMarkdownExtension = (base: string): string =>
+  MARKDOWN_EXTENSIONS.some((ext) => base.toLowerCase().endsWith(ext)) ? base : `${base}.md`
+
+/** "Notes.md" taken -> "Notes 2.md", the way the Finder numbers copies. */
+function numbered(base: string, n: number): string {
+  if (n === 1) return base
+  const dot = base.lastIndexOf('.')
+  return `${base.slice(0, dot)} ${n}${base.slice(dot)}`
+}
+
+/**
+ * Creates `target` exclusively and fills it. If the write fails part-way
+ * (disk full, I/O error) the file this call created is removed again, so a
+ * failed attempt neither leaves a truncated document behind nor makes the
+ * retry number itself around it. EEXIST passes through untouched: that file
+ * belongs to somebody else.
+ *
+ * The removal is guarded by identity. Between the failure and the unlink the
+ * name could in principle have been replaced, and only the inode this call
+ * created may be deleted.
+ */
+async function createExclusive(target: string, data: string): Promise<void> {
+  const handle = await fs.open(target, 'wx')
+  try {
+    await handle.writeFile(data, 'utf8')
+    await handle.close()
+  } catch (error) {
+    const created = await handle.stat().catch(() => null)
+    await handle.close().catch(() => undefined)
+    if (created) {
+      const there = await fs.lstat(target).catch(() => null)
+      if (there && there.dev === created.dev && there.ino === created.ino) {
+        await fs.unlink(target).catch(() => undefined)
+      }
+    }
+    throw error
+  }
+}
+
+/**
+ * Creates a markdown file named `name`, holding `content`, inside `dir` (or
+ * inside the default folder when none is given), without a dialog.
+ *
+ * Content is written at creation rather than left to a following save: a
+ * two-step create-then-write would leave an empty file behind whenever the
+ * write failed, and would number a fresh name on every retry.
+ *
+ * `name` is a basename, so it cannot walk out of the directory, and `dir` has
+ * to be a directory the user already granted -- a folder they opened, or one
+ * this app created for the purpose. An existing file is never overwritten:
+ * the name is numbered until it is free, and creation is exclusive, so two
+ * windows racing cannot land on the same path and an entry that appears in
+ * between is never followed.
+ */
+export async function createNamedFile(input: unknown): Promise<CreateFileResult> {
+  const opts = (typeof input === 'object' && input !== null ? input : {}) as CreateFileOptions
+  if (typeof opts.name !== 'string' || opts.name.trim() === '') {
+    throw new TypeError('name must be a non-empty string')
+  }
+  const trimmed = opts.name.trim()
+  if (path.basename(trimmed) !== trimmed || trimmed === '.' || trimmed === '..') {
+    throw new Error('EINVAL: name must be a file name, not a path')
+  }
+
+  if (opts.content != null && typeof opts.content !== 'string') {
+    throw new TypeError('content must be a string')
+  }
+  const dir = opts.dir == null ? await defaultDocumentsDir() : await assertReadableDir(opts.dir)
+  const base = withMarkdownExtension(trimmed)
+  const onDisk = fromLf(opts.content ?? '', opts.lineEnding ?? '\n')
+
+  for (let n = 1; n <= 100; n += 1) {
+    // Checked, not granted: see assertWritableNewFile. The grant is issued
+    // only for a file this call actually created.
+    const target = await assertWritableNewFile(path.join(dir, numbered(base, n)))
+    try {
+      await createExclusive(target, onDisk)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      continue
+    }
+    grantFile(target)
+    const stats = await fs.stat(target)
+    rememberState(target, onDisk, stats.mtimeMs)
+    suppressUntil.set(target, Date.now() + 500)
+    return { path: target, mtimeMs: stats.mtimeMs }
+  }
+  throw new Error(`EEXIST: too many files named like "${base}"`)
 }
 
 export async function statPath(input: unknown): Promise<StatResult | null> {

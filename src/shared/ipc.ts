@@ -15,6 +15,7 @@ export const IPC = {
   fsWriteFile: 'fs:writeFile',
   fsStat: 'fs:stat',
   fsRename: 'fs:rename',
+  fsCreateFile: 'fs:createFile',
   folderList: 'folder:list',
   folderWatch: 'folder:watch',
   folderUnwatch: 'folder:unwatch',
@@ -23,6 +24,9 @@ export const IPC = {
   recentsList: 'recents:list',
   recentsAdd: 'recents:add',
   recentsClear: 'recents:clear',
+  recentsListFolders: 'recents:listFolders',
+  recentsAddFolder: 'recents:addFolder',
+  recentsClearFolders: 'recents:clearFolders',
   settingsGet: 'settings:get',
   settingsPatch: 'settings:patch',
   windowClose: 'window:close',
@@ -37,7 +41,11 @@ export const IPC = {
   windowRerouteOpen: 'window:rerouteOpen',
   appRendererReady: 'app:rendererReady',
   appGrantDroppedPath: 'app:grantDroppedPath',
+  appStartDrag: 'app:startDrag',
+  appPreloadToken: 'app:preloadToken',
+  appOpenLinkedFile: 'app:openLinkedFile',
   menuFileContext: 'menu:fileContext',
+  menuFolderSwitcher: 'menu:folderSwitcher',
   printExportPdf: 'print:exportPdf',
   versionsList: 'versions:list',
   versionsRead: 'versions:read',
@@ -52,6 +60,7 @@ export const IPC = {
   hostFolderTree: 'host:folderTree',
   hostCloseRequested: 'host:closeRequested',
   hostFullScreenChanged: 'host:fullScreenChanged',
+  hostRecentFoldersChanged: 'host:recentFoldersChanged',
 } as const
 
 /** Commands the editor surface knows how to run. */

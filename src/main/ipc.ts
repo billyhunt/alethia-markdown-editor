@@ -3,28 +3,42 @@ import path from 'node:path'
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { isReadablePath } from '../shared/markdown.ts'
-import { readTextFile, renameFile, statPath, writeTextFile } from './files.ts'
+import { createNamedFile, readTextFile, renameFile, statPath, writeTextFile } from './files.ts'
 import { listMarkdownTree } from './folder.ts'
 import {
   confirmSaveChanges,
+  confirmOpenLinkedFile,
   showError,
   showOpenFile,
   showOpenFolder,
   showSaveAs,
 } from './dialogs.ts'
-import { getSettings, patchSettings } from './settings.ts'
+import { getSettings, patchUiSettings } from './settings.ts'
 import { EMPTY_SESSION } from '../shared/settings.ts'
-import { addRecent, clearRecents, listRecents } from './recents.ts'
 import {
+  addRecent,
+  addRecentFolder,
+  clearRecentFolders,
+  clearRecents,
+  listRecentFolders,
+  listRecents,
+  renameRecent,
+} from './recents.ts'
+import {
+  assertGranted,
   assertReadable,
-  canonicalPath,
   assertReadableDir,
+  assertWritable,
+  canonicalPath,
   grantFile,
   grantRoot,
   validatePath,
 } from './paths.ts'
 import {
   claimDocument,
+  documentForId,
+  dropTokenMatches,
+  issueDropToken,
   markForceClose,
   noteDocument,
   noteEdited,
@@ -34,15 +48,19 @@ import {
   setQuitting,
   settleIncoming,
   takeSession,
+  windowShowing,
 } from './windows.ts'
+import { openLinkedMarkdown } from './links.ts'
 import { route } from './openWith.ts'
 import { showFileContextMenu } from './fileMenu.ts'
+import { showFolderSwitcherMenu } from './folderMenu.ts'
+import { startPathDrag, takeOwnDrag } from './dragOut.ts'
 import { exportPdf } from './printing.ts'
 import { clearVersions, listVersions, readVersion } from './versions.ts'
 import { unwatchDocument, unwatchFolder, watchDocument, watchFolder } from './watcher.ts'
 import type {
   DocumentInfo,
-  OpenPathEvent,
+  DroppedPathResult,
   RendererReadyResult,
   SaveAsOptions,
   WriteFileOptions,
@@ -84,9 +102,16 @@ export function registerIpcHandlers(): void {
     writeTextFile(filePath, content, asObject(opts) as WriteFileOptions),
   )
   ipcMain.handle(IPC.fsStat, (_event, filePath: unknown) => statPath(filePath))
-  ipcMain.handle(IPC.fsRename, (_event, filePath: unknown, name: unknown) =>
-    renameFile(filePath, name),
-  )
+  ipcMain.handle(IPC.fsRename, async (_event, filePath: unknown, name: unknown) => {
+    // Recents hold canonical paths (/private/var, not /var), so the entry to
+    // move is found by the same resolution renameFile itself applies.
+    const from = await assertWritable(filePath)
+    const result = await renameFile(filePath, name)
+    // Recents follow the file rather than accumulating its old names.
+    if (result.path !== from) renameRecent(from, result.path)
+    return result
+  })
+  ipcMain.handle(IPC.fsCreateFile, (_event, opts: unknown) => createNamedFile(opts))
 
   // --- folder --------------------------------------------------------------
   ipcMain.handle(IPC.folderList, (_event, root: unknown) => listMarkdownTree(root))
@@ -111,8 +136,9 @@ export function registerIpcHandlers(): void {
     const win = winOf(event)
     const target = await assertReadable(filePath)
     if (win) {
-      noteDocument(win, target)
+      const id = noteDocument(win, target)
       await watchDocument(win, target)
+      return id
     }
   })
   ipcMain.handle(IPC.docUnwatch, (event) => {
@@ -127,10 +153,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.recentsList, () => listRecents())
   ipcMain.handle(IPC.recentsAdd, (_event, filePath: unknown) => addRecent(filePath))
   ipcMain.handle(IPC.recentsClear, () => clearRecents())
+  ipcMain.handle(IPC.recentsListFolders, () => listRecentFolders())
+  ipcMain.handle(IPC.recentsAddFolder, (_event, dirPath: unknown) => addRecentFolder(dirPath))
+  ipcMain.handle(IPC.recentsClearFolders, () => clearRecentFolders())
 
   // --- settings ------------------------------------------------------------
   ipcMain.handle(IPC.settingsGet, () => getSettings())
-  ipcMain.handle(IPC.settingsPatch, (_event, patch: unknown) => patchSettings(asObject(patch)))
+  ipcMain.handle(IPC.settingsPatch, (_event, patch: unknown) => patchUiSettings(asObject(patch)))
 
   // --- window --------------------------------------------------------------
   ipcMain.handle(IPC.windowClose, (event, opts: unknown) => {
@@ -206,6 +235,10 @@ export function registerIpcHandlers(): void {
   })
 
   // --- app -----------------------------------------------------------------
+  ipcMain.handle(IPC.appPreloadToken, (event) => {
+    if (!winOf(event)) throw new Error('EPERM: unknown renderer')
+    return issueDropToken(event.sender)
+  })
   ipcMain.handle(IPC.appRendererReady, (event): RendererReadyResult => {
     const win = winOf(event)
     // Each window restores its own document and folder, and receives only the
@@ -222,8 +255,11 @@ export function registerIpcHandlers(): void {
       isPackaged: app.isPackaged,
     }
   })
-  ipcMain.handle(IPC.appGrantDroppedPath, async (_event, filePath: unknown): Promise<OpenPathEvent> => {
+  ipcMain.handle(IPC.appGrantDroppedPath, async (event, filePath: unknown, token: unknown): Promise<DroppedPathResult> => {
+    if (!winOf(event) || !dropTokenMatches(event.sender, token)) throw new Error('EPERM: untrusted drop')
     const target = validatePath(filePath)
+    // The sidebar's own drag released back over the window grants nothing.
+    if (await takeOwnDrag(event.sender, target)) return { kind: 'self' }
     const stats = await fs.stat(target)
     if (stats.isDirectory()) return { path: grantRoot(target), kind: 'dir' }
     if (!isReadablePath(target)) throw new Error('EPERM: not a markdown file')
@@ -232,11 +268,45 @@ export function registerIpcHandlers(): void {
     grantRoot(path.dirname(target))
     return { path: grantFile(target), kind: 'file' }
   })
+  ipcMain.handle(IPC.appOpenLinkedFile, async (event, href: unknown, documentId: unknown) => {
+    const win = winOf(event)
+    const source = win && documentForId(win, documentId)
+    if (!win || !source) throw new Error('EPERM: document identity is stale')
+    await openLinkedMarkdown(source, asString(href, 'href'), {
+      realPath: async target => fs.realpath(target).catch(() => null),
+      isGranted: target => assertGranted(target).then(() => true, () => false),
+      existingWindow: target => {
+        const existing = windowShowing(target)
+        return existing ? { focus: () => raise(existing) } : null
+      },
+      confirm: (target, isLink) => confirmOpenLinkedFile(win, target, isLink),
+      open: target => {
+        // Only the one file is granted. Widening to its directory would let an
+        // already-granted file turn into a whole folder without any dialog,
+        // and the folder would then persist in the saved window sessions.
+        // It is routed like any other open, so it reserves its window and is
+        // found by the next request for the same file.
+        route({ path: grantFile(target), kind: 'file' })
+      },
+      missing: target => { void showError(win, 'Could not open linked file', `File not found: ${target}`) },
+    })
+  })
+
+  ipcMain.handle(IPC.appStartDrag, (event, target: unknown) =>
+    // A refused drag just does not start; the pointer is the only one waiting.
+    startPathDrag(event.sender, target).catch((error: unknown) => {
+      console.warn('drag refused:', error instanceof Error ? error.message : error)
+    }),
+  )
 
   // --- context menu --------------------------------------------------------
   ipcMain.handle(IPC.menuFileContext, (event, target: unknown) =>
     showFileContextMenu(winOf(event), target),
   )
+  ipcMain.handle(IPC.menuFolderSwitcher, (event, opts: unknown) => {
+    const current = asObject(opts).current
+    return showFolderSwitcherMenu(winOf(event), typeof current === 'string' ? current : null)
+  })
 
   // --- versions ------------------------------------------------------------
   ipcMain.handle(IPC.versionsList, (_event, filePath: unknown) => listVersions(filePath))
@@ -257,7 +327,7 @@ export function registerIpcHandlers(): void {
     if (!/^https?:\/\//.test(target)) throw new Error('EPERM: only http(s) URLs may be opened')
     return shell.openExternal(target)
   })
-  ipcMain.handle(IPC.shellShowItemInFolder, (_event, filePath: unknown) => {
-    shell.showItemInFolder(validatePath(filePath))
+  ipcMain.handle(IPC.shellShowItemInFolder, async (_event, filePath: unknown) => {
+    shell.showItemInFolder(await assertGranted(filePath))
   })
 }
