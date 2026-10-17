@@ -92,7 +92,7 @@ describe('main learns the document before the editor can request its images', ()
   })
 
   it('on rename of the open file', async () => {
-    host.fs.rename.mockResolvedValue('/test/renamed.md')
+    host.fs.rename.mockResolvedValue({ path: '/test/renamed.md' })
     await renameFile(file, 'renamed.md')
     expect(docs.getState().filePath).toBe('/test/renamed.md')
     expect(buffer.events[0]).toBe('main records document')

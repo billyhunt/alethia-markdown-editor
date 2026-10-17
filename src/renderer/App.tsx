@@ -10,6 +10,7 @@ import { countChars, countWords, extractOutline } from './editor/docStats.ts'
 import { useDocumentTitle, useHostEvents } from './hooks/useHostEvents.ts'
 import { useDropFiles } from './hooks/useDropFiles.ts'
 import { useAutosave } from './hooks/useAutosave.ts'
+import { useDocumentStore } from './state/documentStore.ts'
 import { useWorkspaceStore } from './state/workspaceStore.ts'
 import './styles/editor.css'
 
