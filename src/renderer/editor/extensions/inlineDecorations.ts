@@ -9,7 +9,13 @@ import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import { type Range } from '@codemirror/state'
 import type { SyntaxNode } from '@lezer/common'
 import { isActive, lineIsActive } from './activeRanges.ts'
-import { BulletWidget, CheckboxWidget, CodeFenceWidget, HrWidget } from '../widgets/index.ts'
+import {
+  BulletWidget,
+  CheckboxWidget,
+  CodeFenceWidget,
+  HrWidget,
+  OrderedHangWidget,
+} from '../widgets/index.ts'
 import { MathWidget } from '../widgets/MathWidget.ts'
 
 /**
@@ -348,7 +354,16 @@ export function buildDecorations(view: EditorView): Built {
                 Decoration.replace({ widget: new BulletWidget(depth) }),
               )
             } else {
-              built.decorations.push(markClass('cm-md-ol-mark').range(node.from, node.to))
+              // The number takes its following space with it, and a widget in
+              // front pulls both back by their width, so the text starts at the
+              // item's column, where its wrapped lines and nested items are.
+              const end = state.doc.sliceString(node.to, node.to + 1) === ' ' ? node.to + 1 : node.to
+              built.decorations.push(
+                Decoration.widget({ widget: new OrderedHangWidget(end - node.from), side: -1 }).range(
+                  node.from,
+                ),
+                markClass('cm-md-ol-mark').range(node.from, end),
+              )
             }
             return true
           }
