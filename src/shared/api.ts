@@ -97,6 +97,12 @@ export interface OpenPathEvent {
   kind: PathKind
 }
 
+/**
+ * What a dropped file turned out to be. `self` is the sidebar's own drag
+ * released back over the window (main started it): nothing to open.
+ */
+export type DroppedPathResult = OpenPathEvent | { kind: 'self' }
+
 export interface CloseRequestedEvent {
   reason: 'close' | 'quit'
 }
@@ -240,8 +246,14 @@ export interface MarkdownApi {
     /** Call once after listeners are registered. Flushes queued open-with paths. */
     rendererReady(): Promise<RendererReadyResult>
     /** Validates and grants a dropped path. Rejects non-markdown files. */
-    grantDroppedPath(file: File): Promise<OpenPathEvent>
+    grantDroppedPath(file: File): Promise<DroppedPathResult>
     openLinkedFile(href: string, documentId: string): Promise<void>
+    /**
+     * Turns a sidebar drag into a native file drag, so dropping it in a
+     * terminal types its path. Call from dragstart, after preventDefault.
+     * A refused drag simply does not start.
+     */
+    startDrag(target: { path: string }): Promise<void>
   }
 
   versions: {

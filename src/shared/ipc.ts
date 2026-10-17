@@ -41,6 +41,7 @@ export const IPC = {
   windowRerouteOpen: 'window:rerouteOpen',
   appRendererReady: 'app:rendererReady',
   appGrantDroppedPath: 'app:grantDroppedPath',
+  appStartDrag: 'app:startDrag',
   appPreloadToken: 'app:preloadToken',
   appOpenLinkedFile: 'app:openLinkedFile',
   menuFileContext: 'menu:fileContext',

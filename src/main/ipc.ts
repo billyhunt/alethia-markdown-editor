@@ -54,12 +54,13 @@ import { openLinkedMarkdown } from './links.ts'
 import { route } from './openWith.ts'
 import { showFileContextMenu } from './fileMenu.ts'
 import { showFolderSwitcherMenu } from './folderMenu.ts'
+import { startPathDrag, takeOwnDrag } from './dragOut.ts'
 import { exportPdf } from './printing.ts'
 import { clearVersions, listVersions, readVersion } from './versions.ts'
 import { unwatchDocument, unwatchFolder, watchDocument, watchFolder } from './watcher.ts'
 import type {
   DocumentInfo,
-  OpenPathEvent,
+  DroppedPathResult,
   RendererReadyResult,
   SaveAsOptions,
   WriteFileOptions,
@@ -254,9 +255,11 @@ export function registerIpcHandlers(): void {
       isPackaged: app.isPackaged,
     }
   })
-  ipcMain.handle(IPC.appGrantDroppedPath, async (event, filePath: unknown, token: unknown): Promise<OpenPathEvent> => {
+  ipcMain.handle(IPC.appGrantDroppedPath, async (event, filePath: unknown, token: unknown): Promise<DroppedPathResult> => {
     if (!winOf(event) || !dropTokenMatches(event.sender, token)) throw new Error('EPERM: untrusted drop')
     const target = validatePath(filePath)
+    // The sidebar's own drag released back over the window grants nothing.
+    if (await takeOwnDrag(event.sender, target)) return { kind: 'self' }
     const stats = await fs.stat(target)
     if (stats.isDirectory()) return { path: grantRoot(target), kind: 'dir' }
     if (!isReadablePath(target)) throw new Error('EPERM: not a markdown file')
@@ -288,6 +291,13 @@ export function registerIpcHandlers(): void {
       missing: target => { void showError(win, 'Could not open linked file', `File not found: ${target}`) },
     })
   })
+
+  ipcMain.handle(IPC.appStartDrag, (event, target: unknown) =>
+    // A refused drag just does not start; the pointer is the only one waiting.
+    startPathDrag(event.sender, target).catch((error: unknown) => {
+      console.warn('drag refused:', error instanceof Error ? error.message : error)
+    }),
+  )
 
   // --- context menu --------------------------------------------------------
   ipcMain.handle(IPC.menuFileContext, (event, target: unknown) =>

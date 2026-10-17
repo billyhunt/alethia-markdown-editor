@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { EventEmitter } from 'node:events'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -16,7 +17,14 @@ const native = vi.hoisted(() => ({
   showItemInFolder: vi.fn(),
 }))
 vi.mock('electron', () => ({
-  app: { getPath: () => path.join(os.tmpdir(), 'alethia-ipc-userdata'), addRecentDocument: vi.fn(), clearRecentDocuments: vi.fn(), getVersion: () => 'test' },
+  app: {
+    getPath: () => path.join(os.tmpdir(), 'alethia-ipc-userdata'),
+    addRecentDocument: vi.fn(),
+    clearRecentDocuments: vi.fn(),
+    getVersion: () => 'test',
+    getFileIcon: () => Promise.reject(new Error('no icon')),
+  },
+  nativeImage: { createFromDataURL: () => ({}) },
   ipcMain: { handle: (name: string, handler: (...args: any[]) => any) => native.handlers.set(name, handler) },
   BrowserWindow: { fromWebContents: (sender: any) => native.windows.find(w => w.webContents === sender), getAllWindows: () => native.windows },
   Menu: { buildFromTemplate: (template: unknown) => template, setApplicationMenu: vi.fn() },
@@ -184,6 +192,30 @@ it('accepts a drop only with the preload-issued token', async () => {
   await expect(assertReadable(secret)).rejects.toThrow(/EPERM/)
   await expect(invoke(IPC.appGrantDroppedPath, secret, native.dropToken)).resolves.toEqual({ path: secret, kind: 'file' })
   await expect(assertReadable(secret)).resolves.toBe(secret)
+})
+it('tells the drop of the sidebar\'s own drag apart, once, and opens everything else', async () => {
+  const contents = Object.assign(new EventEmitter(), { startDrag: vi.fn(), isDestroyed: () => false })
+  native.windows[0].webContents = contents
+  const other = path.join(root, 'other.md')
+  await fs.writeFile(other, '# other')
+  grantFile(secret)
+  grantFile(other)
+  await invoke(IPC.appStartDrag, { path: secret })
+  expect(contents.startDrag).toHaveBeenCalledWith(expect.objectContaining({ file: secret }))
+  // A forged drop without the token neither learns nor spends it.
+  await expect(invoke(IPC.appGrantDroppedPath, secret, 'wrong-token')).rejects.toThrow(/EPERM/)
+  await expect(invoke(IPC.appGrantDroppedPath, secret, native.dropToken)).resolves.toEqual({ kind: 'self' })
+  await expect(invoke(IPC.appGrantDroppedPath, secret, native.dropToken)).resolves.toEqual({ path: secret, kind: 'file' })
+  await invoke(IPC.appStartDrag, { path: secret })
+  await expect(invoke(IPC.appGrantDroppedPath, other, native.dropToken)).resolves.toEqual({ path: other, kind: 'file' })
+  await expect(invoke(IPC.appGrantDroppedPath, secret, native.dropToken)).resolves.toEqual({ path: secret, kind: 'file' })
+})
+it('does not start a drag of a path the window was never given', async () => {
+  const contents = Object.assign(new EventEmitter(), { startDrag: vi.fn(), isDestroyed: () => false })
+  native.windows[0].webContents = contents
+  await invoke(IPC.appStartDrag, { path: secret })
+  expect(contents.startDrag).not.toHaveBeenCalled()
+  await expect(invoke(IPC.appGrantDroppedPath, secret, native.dropToken)).resolves.toEqual({ path: secret, kind: 'file' })
 })
 it('only reveals granted paths in Finder', async () => {
   await expect(invoke(IPC.shellShowItemInFolder, secret)).rejects.toThrow(/EPERM/)

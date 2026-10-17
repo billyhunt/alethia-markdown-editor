@@ -36,6 +36,13 @@ export default function FileTree({ node, depth }: Props) {
       )
   }
 
+  // A native drag rather than an HTML one, so the row leaves the window as a
+  // real file: a terminal types its path, Finder copies it.
+  const onDragStart = (event: React.DragEvent) => {
+    event.preventDefault()
+    void api.app.startDrag({ path: node.path })
+  }
+
   if (renaming) {
     return (
       <RenameRow
@@ -60,6 +67,8 @@ export default function FileTree({ node, depth }: Props) {
         // you can see what you are renaming.
         onDoubleClick={() => setRenaming(true)}
         onContextMenu={onContextMenu}
+        draggable
+        onDragStart={onDragStart}
         title={node.path}
       >
         <FileIcon />
@@ -76,6 +85,8 @@ export default function FileTree({ node, depth }: Props) {
         style={indent}
         onClick={() => setOpen((value) => !value)}
         onContextMenu={onContextMenu}
+        draggable
+        onDragStart={onDragStart}
         aria-expanded={open}
       >
         <ChevronIcon open={open} />

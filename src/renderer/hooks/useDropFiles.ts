@@ -16,11 +16,13 @@ export function useDropFiles(): void {
       if (!file) return
       void api.app
         .grantDroppedPath(file)
-        .then((entry) =>
-          entry.kind === 'dir'
+        .then((entry) => {
+          // A sidebar row let go of over the window is a drag that went nowhere.
+          if (entry.kind === 'self') return
+          return entry.kind === 'dir'
             ? adoptFolder(entry.path)
-            : openPath(entry.path, { preferDocument: true }),
-        )
+            : openPath(entry.path, { preferDocument: true })
+        })
         .catch((error: unknown) =>
           api.dialog.showError({
             title: 'Could not open that file',
