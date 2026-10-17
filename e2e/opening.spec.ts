@@ -25,8 +25,11 @@ import {
  * that file in exactly one window, and that window in front.
  */
 
-/** Marks a flow that fails today because of a bug; remove when it is fixed. */
-const knownBug = (reason: string): void => test.fail(true, reason)
+/**
+ * Marks a flow that fails today because of a bug; remove when it is fixed.
+ * Exported so the suite still typechecks once no flow needs it.
+ */
+export const knownBug = (reason: string): void => test.fail(true, reason)
 
 let box: Sandbox
 test.beforeEach(() => {
@@ -38,18 +41,19 @@ test.afterEach(() => {
 
 test.describe('first launch', () => {
   test('a new user lands on the welcome tour, not an empty editor', async () => {
-    knownBug('the welcome fetch is blocked by connect-src \'none\' in a built app (#41)')
     const app = await launch(box)
     const page = await app.firstWindow()
-    await expect.poll(() => editorText(page)).toContain('Alethia')
+    // Headings are uppercased by CSS, and innerText reports what is shown.
+    await expect.poll(() => editorText(page)).toMatch(/welcome to alethia/i)
     await quit(app)
   })
 
-  test('the welcome tour is unsaved and never written into the app bundle', async () => {
-    knownBug('the welcome fetch is blocked by connect-src \'none\' in a built app (#41)')
+  test('the welcome tour opens unsaved, with no file behind it', async () => {
+
     const app = await launch(box)
     const page = await app.firstWindow()
-    await expect.poll(() => editorText(page)).toContain('Alethia')
+    // Headings are uppercased by CSS, and innerText reports what is shown.
+    await expect.poll(() => editorText(page)).toMatch(/welcome to alethia/i)
     expect(await openFiles(app)).toEqual([null])
     await quit(app)
   })

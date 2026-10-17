@@ -24,6 +24,8 @@
   --accent: #b52900;
   --accent-hot: #ff3b00;
   --accent-ink: #111111;
+  /* Text set on an --accent fill. --accent is dark rust here, so paper. */
+  --on-accent: #f2f0eb;
   --selection: #f5e0d6;
   --code-bg: #111111;
   --code-fg: #f2f0eb;
@@ -65,6 +67,8 @@
     --accent: #ff5722;
     --accent-hot: #ff3b00;
     --accent-ink: #f2f0eb;
+    /* --accent lightens to #ff5722, where paper is 2.78:1 and ink 5.97:1. */
+    --on-accent: #111111;
     --selection: #4a2418;
     --code-bg: #000000;
     --code-fg: #f2f0eb;

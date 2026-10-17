@@ -2,8 +2,9 @@ import { EditorView } from '@codemirror/view'
 import { EditorSelection } from '@codemirror/state'
 import { createEditorState } from './createEditor.ts'
 import { EDITOR_COMMANDS } from './commands.ts'
+import { SEARCH_COMMANDS, searchFocusPlan } from './searchCommands.ts'
 import { focusMode, modesCompartment, typewriterMode } from './extensions/modes.ts'
-import type { EditorCommand } from '../../shared/ipc.ts'
+import type { EditorCommand, SearchCommand } from '../../shared/ipc.ts'
 
 /**
  * Owns the single EditorView. React mounts it once and never re-renders it --
@@ -90,6 +91,22 @@ class EditorController {
     if (!view) return false
     view.focus()
     return EDITOR_COMMANDS[command]({ state: view.state, dispatch: view.dispatch })
+  }
+
+  /**
+   * Runs a search command from the menu. Focus is only taken when it is not
+   * already inside the editor (which includes the search panel's own fields)
+   * and not in some other field that is being typed into; see
+   * `searchFocusPlan`.
+   */
+  search(command: SearchCommand): boolean {
+    const view = this.view
+    if (!view) return false
+
+    const plan = searchFocusPlan(view, document.activeElement)
+    if (plan === 'ignore') return false
+    if (plan === 'take-focus') view.focus()
+    return SEARCH_COMMANDS[command](view)
   }
 
   /** Swaps focus/typewriter modes without rebuilding the document state. */
