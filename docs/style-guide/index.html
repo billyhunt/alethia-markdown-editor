@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="al-page">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -317,13 +317,13 @@ tags: [intake, ops]</div>
     </main>
 
     <script>
-      // Theme switch for the specimen only: alethia.css reads data-theme.
+      // Theme switch for the specimen only: alethia.css reads data-al-theme.
       const buttons = document.querySelectorAll('[data-set-theme]')
       for (const button of buttons) {
         button.addEventListener('click', () => {
           const theme = button.dataset.setTheme
-          if (theme === 'auto') delete document.documentElement.dataset.theme
-          else document.documentElement.dataset.theme = theme
+          if (theme === 'auto') delete document.documentElement.dataset.alTheme
+          else document.documentElement.dataset.alTheme = theme
           for (const other of buttons) other.setAttribute('aria-pressed', String(other === button))
         })
       }

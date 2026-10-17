@@ -10,8 +10,8 @@ further than the app, it says so.
 | File | Use it for |
 |---|---|
 | `README.md` | The rules and why they exist. Read this before you design anything new. |
-| `alethia.css` | Drop-in stylesheet: fonts, tokens, `.al-*` chrome, `.al-prose` for plain HTML, code colours, print. |
-| `tokens.json` | The same tokens in W3C Design Tokens format, for Figma plugins, Style Dictionary, Tailwind and similar tools. |
+| `alethia.css` | Drop-in stylesheet: fonts, tokens, `.al-*` chrome, `.al-prose` for plain HTML, code colours, print. Inert until an element opts in (§14). |
+| `tokens.json` | The same tokens in the W3C Design Tokens Format Module 2025.10 (DTCG), for Figma plugins, Style Dictionary, Terrazzo and similar tools. |
 | `index.html` | A live specimen. Open it to check a theme, a component or a print run. |
 | `fonts/` | The five WOFF2 files the system uses (Latin subset), with their OFL licences. |
 | `assets/alethia-icon.svg` | The app icon. |
@@ -474,7 +474,7 @@ layer.
 | **Tasks** | Bullet, then a native checkbox with `accent-color: var(--accent)`. Done items go muted and are struck through. |
 | **Code block** | A solid black slab, square, full measure, mono 0.85em, padding 0.5em 1em. The language is set top right in hot mono caps, 0.7rem, +0.16em. |
 | **Table** | Mono 0.85em, 2px ink cell borders, head row inverted in caps (+0.12em, 500). A cell containing **bold** fills entirely with hot, because a chip floating inside a cell reads as a mistake. |
-| **Image** | Block, at most the measure wide and 32rem tall, contained. (From PR #42.) |
+| **Image** | Inline with the text (`inline-block`, middle-aligned), at most the measure wide and `60vh` tall, with a 3px `--border` rule around it. (From PR #42.) |
 | **Display math** | Centred, 0.3em vertical padding (KaTeX). |
 | **Front matter** | Mono 0.8em, +0.04em, muted, behind a 3px muted rule. |
 
@@ -496,13 +496,15 @@ high in both directions.
 - `--accent` lifts from rust to `#ff5722`, so orange text stays readable on ink.
 - `--accent-hot` does **not** change. Fills stay the same orange with ink on
   them.
-- The code well and panels go from ink to pure black `#000000`, so the slab
-  still reads as a slab against the ink ground.
+- The code well goes from ink to pure black `#000000`, so the slab still
+  reads as a slab against the ink ground. Panels (the search panel) stay on
+  `--bg`.
 - Selection goes from blush to ember.
 
 Theme follows the OS (`prefers-color-scheme`). In the app, main sets
 `nativeTheme.themeSource`, and the renderer only reads the media query. In
-`alethia.css`, `data-theme="light"` or `data-theme="dark"` forces a theme on any subtree.
+`alethia.css`, `data-al-theme="light"` or `data-al-theme="dark"` forces a
+theme on an element and everything inside it.
 
 The native window background is set to the theme ground (`#111111` or
 `#f2f0eb`) before the page paints, so there is never a white flash.
@@ -527,7 +529,9 @@ black is free and the orange would land as a muddy mid-grey.
   used to.
 - Chrome is hidden. Focus-mode dimming is cancelled. Headings never end a
   page, and tables don't split.
-- Page margins: 18mm top and bottom, 16mm left and right.
+- Page margins: 18mm top and bottom, 16mm left and right (`@page`). That is
+  the one rule in `alethia.css` that cannot be scoped to an element, so it
+  applies to whatever page is being printed.
 
 ---
 
@@ -574,8 +578,9 @@ The export fixes or extends a few things that the app does not do yet:
 | Link hover | None (links open with ⌘-click) | Inverts to an ink band |
 | Disabled button | Not used | Dashed 2px rule, muted text, no hover |
 | Text-on-fill colour | `#111111` hard-coded per rule | `--on-hot` token |
-| Unused tokens | `--panel`, `--panel-fg`, `--accent-ink` are defined but never read | Left out |
+| Unused tokens | `--panel`, `--panel-fg`, `--accent-ink` are defined but never read (the search panel is set on `--bg`) | Left out |
 | Icons | Rounded caps, `rx=2` file corners: the one soft element in the app | Kept as-is; if you redraw them, use square caps and miter joins |
+| `.al-input` | The rename input exists only while editing, so its 2px rule is always `--accent`; padding `1px 4px` | Padding matches the app. A resting 2px `--border` rule is added so the input can sit in a form; it turns `--accent` on focus |
 
 ---
 
@@ -624,9 +629,20 @@ The words follow the same rules as the pixels: plain, specific, unsoftened.
 ```
 
 `alethia.css` loads its fonts relative to itself, so keep the `fonts/` folder
-next to it. Global selectors are limited to the tokens and the code-token
-classes. Everything else is scoped to `.al-page`, `.al-prose` or an `.al-*`
-class, so it won't restyle a host page.
+next to it. Loading the file changes nothing on its own: the tokens,
+`color-scheme`, theme attribute, code-token colours and every component are
+scoped to `.al-page`, `.al-prose`, `[data-al-theme]` or an `.al-*` class, and
+a page that has none of those renders exactly as before. The one global rule is
+`@page` in the print section (§9). The scope element can be `<html>`, `<body>`
+or a wrapper `<div>`; the outermost one defines the tokens and nested ones
+inherit its theme.
+
+To force a theme, set `data-al-theme="light"` or `data-al-theme="dark"` on the
+scope element, or on any element inside it:
+
+```html
+<html class="al-page" data-al-theme="dark">
+```
 
 ### Rendered markdown (static sites, docs, READMEs)
 Wrap the generated HTML in `.al-prose`. Put a code block's language in
@@ -665,8 +681,13 @@ Or use `alethia.css` with `classHighlighter` from `@lezer/highlight`, which
 emits the `tok-*` classes styled here.
 
 ### Design tools
-Import `tokens.json` (W3C DTCG format). Semantic colours carry light and dark
-values under `$extensions.mode`.
+Import `tokens.json` (W3C DTCG Format Module 2025.10). Colours are `srgb`
+objects with a `hex` fallback; sizes are `{ value, unit }` in `px` or `rem`.
+DTCG has no `em`, so values the CSS sets in `em` (the content type scale,
+letter-spacing, the list gutter) are plain `number` tokens under `font-scale`,
+`tracking` and `size.list-gutter`: multiples of the element's font size. Semantic colours take
+their light value as `$value` and carry the dark alias under
+`$extensions["com.alethia.mode"]`, which importers may ignore.
 
 ### Slides, posters, social images
 Use paper ground, one display-caps headline, mono caps for the kicker and
