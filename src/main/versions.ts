@@ -108,7 +108,11 @@ export async function moveVersionHistory(from: string, to: string): Promise<void
   const existingStamp = Math.max(0, ...(await entriesFor(to)).map((version) => version.savedAt))
   lastStamp.delete(source)
   lastStamp.set(destination, Math.max(movedStamp, destinationStamp, existingStamp))
-  await fs.writeFile(path.join(destination, 'origin.json'), JSON.stringify({ path: to }, null, 2))
+  // The history has already moved. This note only helps maintenance find its
+  // owner, so failing to rewrite it must not report the history as stranded.
+  await fs
+    .writeFile(path.join(destination, 'origin.json'), JSON.stringify({ path: to }, null, 2))
+    .catch(() => undefined)
 }
 
 /**

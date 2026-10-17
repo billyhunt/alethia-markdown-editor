@@ -1,7 +1,11 @@
+import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import { constants as fsConstants } from 'node:fs'
+import type { Stats } from 'node:fs'
 import fs from 'node:fs/promises'
+import type { FileHandle } from 'node:fs/promises'
 import path from 'node:path'
+import { promisify } from 'node:util'
 import { assertReadable, assertReadableDir, assertWritable, assertWritableSibling, grantFile } from './paths.ts'
 import { moveVersionHistory, snapshotVersion } from './versions.ts'
 import { MARKDOWN_EXTENSIONS } from '../shared/markdown.ts'
@@ -44,21 +48,48 @@ const known = new Map<string, KnownState>()
 /** Paths whose watcher events should be ignored until this timestamp. */
 const suppressUntil = new Map<string, number>()
 
-/** Serializes writes to one path so each conflict check sees the prior write. */
-const writeTails = new Map<string, Promise<void>>()
+/**
+ * Serializes writes to one path so each conflict check sees the prior write.
+ *
+ * A lane exists only while something is queued on or holding the path, so
+ * nothing accumulates for files that were written once and left alone.
+ */
+interface WriteLane {
+  tail: Promise<void>
+  /**
+   * How many times the path has been renamed away while this lane has been
+   * alive. A turn compares it with the value it saw when it joined the queue:
+   * a change means its request was made for a document that no longer lives
+   * here. Requests that join after the rename see the new value, so a later
+   * file created at the old name saves normally.
+   */
+  renames: number
+}
 
-async function withWriteLock<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
-  const previous = writeTails.get(filePath) ?? Promise.resolve()
+const writeLanes = new Map<string, WriteLane>()
+
+/**
+ * Runs `operation` once earlier writes to `filePath` have finished. It is told
+ * whether the path was renamed away while it waited.
+ */
+async function withWriteLock<T>(
+  filePath: string,
+  operation: (renamedWhileQueued: boolean) => Promise<T>,
+): Promise<T> {
+  const lane = writeLanes.get(filePath) ?? { tail: Promise.resolve(), renames: 0 }
+  const queuedAt = lane.renames
+  const previous = lane.tail
   let release!: () => void
   const turn = new Promise<void>((resolve) => { release = resolve })
   const tail = previous.then(() => turn)
-  writeTails.set(filePath, tail)
+  lane.tail = tail
+  writeLanes.set(filePath, lane)
   await previous
   try {
-    return await operation()
+    return await operation(lane.renames !== queuedAt)
   } finally {
     release()
-    if (writeTails.get(filePath) === tail) writeTails.delete(filePath)
+    if (lane.tail === tail) writeLanes.delete(filePath)
   }
 }
 
@@ -67,8 +98,11 @@ async function withWriteLocks<T>(filePaths: string[], operation: () => Promise<T
   return withWriteLock(first, () => second ? withWriteLock(second, operation) : operation())
 }
 
-/** Paths moved by rename reject stale writes that were queued before it. */
-const renamedPaths = new Map<string, string>()
+/** Called by the holder of `filePath`'s lock once the document has left it. */
+function markRenamedAway(filePath: string): void {
+  const lane = writeLanes.get(filePath)
+  if (lane) lane.renames++
+}
 
 const hash = (content: string): string =>
   crypto.createHash('sha1').update(content).digest('hex')
@@ -137,9 +171,10 @@ export async function writeTextFile(
     throw new TypeError('content must be a string')
   }
 
-  return withWriteLock(filePath, async () => {
-    const movedTo = renamedPaths.get(filePath)
-    if (movedTo) throw new Error(`ESTALE: file was renamed to ${movedTo}`)
+  return withWriteLock(filePath, async (renamedWhileQueued) => {
+    // This save was made for a document that has since moved; writing now
+    // would resurrect the old name with stale content.
+    if (renamedWhileQueued) throw new Error(`ESTALE: ${path.basename(filePath)} was renamed before this save could run`)
     const conflict = await findConflict(filePath, opts)
     if (conflict) return conflict
 
@@ -171,12 +206,83 @@ export async function writeTextFile(
 
 const HARD_LINK_UNAVAILABLE = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV'])
 
+const execFileAsync = promisify(execFile)
+
+/**
+ * Node's copyFile carries the content and the mode but not extended
+ * attributes (Finder tags, the quarantine flag), and Node has no API for
+ * them; the system tool does. A failure on one attribute does not stop the
+ * others being copied.
+ */
+async function copyExtendedAttributes(from: string, to: string): Promise<void> {
+  const { stdout } = await execFileAsync('/usr/bin/xattr', [from])
+  let failure: unknown
+  for (const name of stdout.split('\n')) {
+    // The kernel stamps this one itself and ignores attempts to write it.
+    if (name === '' || name === 'com.apple.provenance') continue
+    try {
+      const { stdout: value } = await execFileAsync('/usr/bin/xattr', ['-p', '-x', name, from])
+      await execFileAsync('/usr/bin/xattr', ['-w', '-x', name, value.trim(), to])
+    } catch (error) {
+      failure ??= error
+    }
+  }
+  if (failure !== undefined) throw failure
+}
+
+/**
+ * Gives a copy what rename(2) would have kept. On macOS copyFile keeps the
+ * mode and access time but not the modification time or extended attributes,
+ * and a conflict check or a Finder tag depends on those.
+ *
+ * Best effort: the content is already safely at `to`, and the volumes that
+ * need this fallback (exFAT, network shares) are exactly the ones that may
+ * refuse some of these calls. Failing the rename would leave them unable to
+ * rename at all.
+ */
+async function restoreMetadata(from: string, to: string, source: Stats): Promise<void> {
+  const attempt = async (what: string, step: () => Promise<unknown>): Promise<void> => {
+    try {
+      await step()
+    } catch (error) {
+      console.error(`Could not restore ${what} on ${to}`, error)
+    }
+  }
+  const mode = source.mode & 0o7777
+  if (process.platform === 'darwin') {
+    await attempt('extended attributes', async () => {
+      // A copy of a read-only file would refuse to take its own attributes.
+      await fs.chmod(to, mode | 0o200)
+      await copyExtendedAttributes(from, to)
+    })
+  }
+  await attempt('permissions', () => fs.chmod(to, mode))
+  await attempt('timestamps', () => fs.utimes(to, source.atimeMs / 1000, source.mtimeMs / 1000))
+}
+
+/**
+ * Completes a move by removing the source. If something else already did, the
+ * copy at `to` may now be the only one and must stay.
+ */
+async function removeSource(from: string, to: string): Promise<void> {
+  try {
+    await fs.unlink(from)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    await fs.unlink(to).catch(() => undefined)
+    throw error
+  }
+}
+
 /** Exclusive copy is the no-hard-link fallback used by removable filesystems. */
 async function copyNoReplace(from: string, to: string): Promise<void> {
+  const source = await fs.stat(from)
   await fs.copyFile(from, to, fsConstants.COPYFILE_EXCL)
-  let handle: Awaited<ReturnType<typeof fs.open>> | undefined
+  let handle: FileHandle | undefined
   try {
-    handle = await fs.open(to, 'r+')
+    // Read-only: a copy of a read-only file is read-only too, and fsync does
+    // not need write access.
+    handle = await fs.open(to, 'r')
     await handle.sync()
   } catch (error) {
     await fs.unlink(to).catch(() => undefined)
@@ -184,12 +290,8 @@ async function copyNoReplace(from: string, to: string): Promise<void> {
   } finally {
     await handle?.close()
   }
-  try {
-    await fs.unlink(from)
-  } catch (error) {
-    await fs.unlink(to).catch(() => undefined)
-    throw error
-  }
+  await restoreMetadata(from, to, source)
+  await removeSource(from, to)
 }
 
 /** Moves a file without replacing a destination, including on exFAT. */
@@ -201,12 +303,7 @@ async function moveNoReplace(from: string, to: string): Promise<void> {
     await copyNoReplace(from, to)
     return
   }
-  try {
-    await fs.unlink(from)
-  } catch (error) {
-    await fs.unlink(to).catch(() => undefined)
-    throw error
-  }
+  await removeSource(from, to)
 }
 
 /**
@@ -230,54 +327,60 @@ export async function renameFile(input: unknown, name: unknown): Promise<RenameF
   if (to === from) return { path: from }
 
   return withWriteLocks([from, to], async () => {
-  await assertWritableSibling(from, to)
+    await assertWritableSibling(from, to)
 
-  let caseOnly = false
-  try {
-    await fs.access(to)
-    const [source, destination] = await Promise.all([fs.stat(from), fs.stat(to)])
-    caseOnly = source.dev === destination.dev && source.ino === destination.ino
-    if (!caseOnly) throw new Error(`EEXIST: "${withExt}" already exists`)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-
-  if (caseOnly) {
-    const temporary = path.join(path.dirname(from), `.alethia-rename-${crypto.randomUUID()}.tmp`)
-    await moveNoReplace(from, temporary)
-    try {
-      await moveNoReplace(temporary, to)
-    } catch (error) {
-      await moveNoReplace(temporary, from).catch((rollbackError) => {
-        throw new Error(`Rename failed and the file could not be restored; it remains at ${temporary}`, {
-          cause: new AggregateError([error, rollbackError]),
-        })
-      })
-      throw error
+    const source = await fs.stat(from)
+    if (source.isDirectory()) {
+      // The no-replace move is built on link(2), which refuses folders, and
+      // rename(2) would silently replace an empty folder at the destination.
+      // The sidebar only offers Rename on files, so refuse rather than risk it.
+      throw new Error(`EISDIR: "${path.basename(from)}" is a folder; only files can be renamed`)
     }
-  } else {
-    // Exclusive link/copy never replaces a destination created after access().
-    await moveNoReplace(from, to)
-  }
-  grantFile(to)
-  renamedPaths.set(from, to)
-  renamedPaths.delete(to)
-  const state = known.get(from)
-  if (state) {
-    known.delete(from)
-    known.set(to, state)
-  }
-  const suppressed = suppressUntil.get(from)
-  suppressUntil.delete(from)
-  if (suppressed !== undefined) suppressUntil.set(to, suppressed)
-  let historyPath: string | undefined
-  try {
-    await moveVersionHistory(from, to)
-  } catch (error) {
-    console.error(`Could not move version history for ${to}`, error)
-    historyPath = from
-  }
-  return { path: to, ...(historyPath ? { historyPath } : {}) }
+
+    // The destination being this very file under a name that differs only in
+    // case (or Unicode normalization) is how a case-insensitive volume shows a
+    // case-only rename, not a collision. The names must match too: two hard
+    // links to one file (a.md, b.md) share an inode but are a real collision.
+    const [oldName, newName] = [path.basename(from), withExt].map(
+      (entry) => entry.normalize('NFC').toLowerCase(),
+    )
+    let caseOnly = false
+    try {
+      await fs.access(to)
+      const destination = await fs.stat(to)
+      caseOnly =
+        oldName === newName && source.dev === destination.dev && source.ino === destination.ino
+      if (!caseOnly) throw new Error(`EEXIST: "${withExt}" already exists`)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+
+    if (caseOnly) {
+      // Same file, so rename(2) only changes its stored name, atomically; the
+      // file is never without a name and there is nothing to roll back.
+      await fs.rename(from, to)
+    } else {
+      // Exclusive link/copy never replaces a destination created after access().
+      await moveNoReplace(from, to)
+    }
+    grantFile(to)
+    markRenamedAway(from)
+    const state = known.get(from)
+    if (state) {
+      known.delete(from)
+      known.set(to, state)
+    }
+    const suppressed = suppressUntil.get(from)
+    suppressUntil.delete(from)
+    if (suppressed !== undefined) suppressUntil.set(to, suppressed)
+    let historyPath: string | undefined
+    try {
+      await moveVersionHistory(from, to)
+    } catch (error) {
+      console.error(`Could not move version history for ${to}`, error)
+      historyPath = from
+    }
+    return { path: to, ...(historyPath ? { historyPath } : {}) }
   })
 }
 
