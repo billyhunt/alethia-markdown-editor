@@ -75,6 +75,7 @@ const api: MarkdownApi = {
       return dropTokenPromise.then((token) => ipcRenderer.invoke(IPC.appGrantDroppedPath, filePath, token))
     },
     openLinkedFile: (href, documentId) => ipcRenderer.invoke(IPC.appOpenLinkedFile, href, documentId),
+    startDrag: (target) => ipcRenderer.invoke(IPC.appStartDrag, target),
   },
   versions: {
     list: (filePath) => ipcRenderer.invoke(IPC.versionsList, filePath),
