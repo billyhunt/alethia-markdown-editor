@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { app, BrowserWindow, nativeImage } from 'electron'
-import { getQuitting, persistSessions, restoreWindows, setQuitting } from './windows.ts'
+import { documentShownBy, getQuitting, persistSessions, restoreWindows, setQuitting } from './windows.ts'
 import { registerIpcHandlers } from './ipc.ts'
 import { hardenSession } from './security.ts'
 import { buildApplicationMenu } from './menu.ts'
@@ -9,6 +9,7 @@ import { grantPersistedRecents } from './recents.ts'
 import { applyTheme } from './theme.ts'
 import { enqueueArgv, enqueuePath } from './openWith.ts'
 import { closeAllWatchers } from './watcher.ts'
+import { installImageProtocol, registerImageScheme, setOpenDocumentLookup } from './images.ts'
 
 // End-to-end tests launch against a throwaway profile, so a run never reads or
 // overwrites a real session. The single-instance lock lives in userData too,
@@ -24,6 +25,10 @@ app.on('open-file', (event, filePath) => {
   event.preventDefault()
   void enqueuePath(filePath)
 })
+
+// Scheme privileges are only accepted before ready, so this cannot wait for
+// the whenReady block below.
+registerImageScheme()
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -52,6 +57,8 @@ if (!app.requestSingleInstanceLock()) {
     grantPersistedRecents()
     applyTheme(getSettings().theme)
     hardenSession()
+    setOpenDocumentLookup(documentShownBy)
+    installImageProtocol()
     registerIpcHandlers()
     buildApplicationMenu()
     await enqueueArgv(process.argv)

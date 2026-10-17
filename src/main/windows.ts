@@ -64,6 +64,11 @@ export function noteFolder(win: BrowserWindow, folder: string | null): void {
 }
 
 /** The window already showing this file, if any. */
+/** The document a window currently shows, as it was opened; null for none. */
+export function documentShownBy(win: BrowserWindow): string | null {
+  return states.get(win.id)?.filePath ?? null
+}
+
 export function windowShowing(filePath: string): BrowserWindow | null {
   for (const win of BrowserWindow.getAllWindows()) {
     if (states.get(win.id)?.filePath === filePath) return win

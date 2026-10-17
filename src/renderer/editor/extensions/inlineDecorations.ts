@@ -17,6 +17,8 @@ import {
   OrderedHangWidget,
 } from '../widgets/index.ts'
 import { MathWidget } from '../widgets/MathWidget.ts'
+import { ImageWidget, imageFailed } from '../widgets/ImageWidget.ts'
+import { documentPath } from './documentPath.ts'
 
 /**
  * The live-preview engine for everything that fits on one line.
@@ -282,6 +284,38 @@ export function buildDecorations(view: EditorView): Built {
             if (!active(node.from, node.to)) hide(built, node.from, node.from + 1)
             return true
 
+          case 'Image': {
+            // The whole `![alt](src)` becomes the picture when the caret is
+            // away; on the line, the source shows and can be edited.
+            if (active(node.from, node.to)) return true
+            // Alt text may legally span lines. A replacement across a line
+            // break is forbidden from a ViewPlugin (CodeMirror throws), so
+            // such an image stays as source; it is rare and still editable.
+            if (state.doc.lineAt(node.from).number !== state.doc.lineAt(node.to).number) {
+              return true
+            }
+            const url = firstNamed(node, 'URL')
+            if (!url) return true
+            const marks = childrenNamed(node, 'LinkMark')
+            // Alt text sits between `![` and `]`, the first two marks.
+            const alt =
+              marks.length >= 2 ? state.doc.sliceString(marks[0].to, marks[1].from) : ''
+            replaceWith(
+              built,
+              node.from,
+              node.to,
+              Decoration.replace({
+                widget: new ImageWidget(
+                  state.doc.sliceString(url.from, url.to),
+                  alt,
+                  state.facet(documentPath),
+                ),
+              }),
+            )
+            // Children are handled: do not also decorate the URL as a link.
+            return false
+          }
+
           case 'Link': {
             const url = firstNamed(node, 'URL')
             const href = url ? state.doc.sliceString(url.from, url.to) : ''
@@ -411,11 +445,20 @@ export const inlineDecorations = ViewPlugin.fromClass(
       // The tree check matters: lezer parses large documents incrementally in
       // idle time, and without it the bottom of a long file stays raw.
       const treeChanged = syntaxTree(update.state) !== syntaxTree(update.startState)
+      // The path arrives after the text for a new note (after Save As),
+      // and every image widget embeds it, so they must be rebuilt.
+      const pathChanged =
+        update.state.facet(documentPath) !== update.startState.facet(documentPath)
+      // An image that failed to load asks for a redraw so its widget can
+      // become a placeholder; nothing else about the state has changed.
+      const imageChanged = update.transactions.some((tr) => tr.annotation(imageFailed) !== undefined)
       if (
         update.docChanged ||
         update.selectionSet ||
         update.viewportChanged ||
-        treeChanged
+        treeChanged ||
+        pathChanged ||
+        imageChanged
       ) {
         const built = buildDecorations(update.view)
         this.decorations = Decoration.set(built.decorations, true)

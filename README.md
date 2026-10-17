@@ -109,12 +109,22 @@ from a source main controls — a dialog, an `open-file` event, argv, a validate
 drop, or an opened folder. Reads are limited to markdown and text, writes to
 markdown, and writes inside `userData` are refused.
 
+Images are the one exception, served through a custom `alethia-image:` scheme
+(`src/main/images.ts`). A request names the document and the source as written
+in it; main serves the bytes only if that document is granted *and* open in a
+window right now, the source resolves inside the document's own directory on
+real paths, and both the name and the real file carry an image extension. The
+CSP admits the scheme for `img-src` only and keeps `connect-src 'none'`, so the
+renderer can display an image but cannot read its bytes back.
+
 ## What works
 
 Live preview for headings, bold, italic, strikethrough, inline code, escapes,
 links, bare URLs, horizontal rules, blockquotes, nested bullet and ordered
 lists, task checkboxes, fenced code with per-language highlighting, GFM tables,
-`$…$` and `$$…$$` math via KaTeX, and YAML front matter.
+`$…$` and `$$…$$` math via KaTeX, YAML front matter, and local images (an
+`![alt](photo.png)` beside or below the note renders in place; the caret
+reveals its source).
 
 Around it: open/save/save-as with dirty tracking, autosave, per-file version
 history, a folder sidebar with rename/reveal/trash, a heading outline, live word
@@ -135,8 +145,12 @@ document does not rewrite every line.
 - **The caret shifts visually** when a node reveals its markers, because those
   characters were always in the document rather than being inserted.
 - **Raw HTML blocks are shown as source**, never rendered.
-- **Relative image paths are not resolved yet** — that needs a custom protocol
-  handler, since the CSP blocks `file:` images.
+- **Remote images are not loaded.** The renderer makes no network requests,
+  deliberately; an `![](https://…)` shows a placeholder saying so.
+- **Images in a document that has never been saved** show a placeholder until
+  it is saved with Save As, since a relative path has nothing to be relative to.
+- **Images inside table cells** show their alt text, not the picture. Click
+  into the table to see the source.
 - **The automated suite covers core regressions, not every workflow.** It
   exercises markdown recognition, live-preview reveal logic, formatting,
   document statistics, table navigation, path grants, and line-ending
