@@ -183,6 +183,11 @@ export interface MarkdownApi {
      */
     revealDocument(path: string): Promise<boolean>
     /**
+     * Ends the claim revealDocument made when it resolved false, once this
+     * window has finished opening the path, or failed, or been cancelled.
+     */
+    releaseDocument(path: string): Promise<void>
+    /**
      * Declines a routed open because this window holds unsaved edits main
      * had not heard about yet; main sends the file to another window.
      */

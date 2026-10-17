@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   setDocument: vi.fn(),
   refreshPreview: vi.fn(),
   revealDocument: vi.fn(),
+  releaseDocument: vi.fn(),
   confirmSaveChanges: vi.fn(),
   rerouteOpen: vi.fn(),
   settleOpen: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('../../src/renderer/api.ts', () => ({
     folder: { list: mocks.folderList, watch: vi.fn() },
     window: {
       revealDocument: mocks.revealDocument,
+      releaseDocument: mocks.releaseDocument,
       rerouteOpen: mocks.rerouteOpen,
       settleOpen: mocks.settleOpen,
     },
@@ -54,6 +56,7 @@ const PATH = '/notes/today.md'
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.revealDocument.mockResolvedValue(false)
+  mocks.releaseDocument.mockResolvedValue(undefined)
   mocks.rerouteOpen.mockResolvedValue(undefined)
   mocks.settleOpen.mockResolvedValue(undefined)
   mocks.getText.mockReturnValue('')
@@ -107,6 +110,46 @@ describe('document-first openPath', () => {
 
     expect(mocks.revealDocument).not.toHaveBeenCalled()
     expect(mocks.readFile).toHaveBeenCalledWith(PATH)
+    expect(mocks.releaseDocument).not.toHaveBeenCalled()
+  })
+
+  it('holds the claim on the file until the open is over, then releases it', async () => {
+    mocks.documentWatch.mockImplementation(async () => {
+      expect(mocks.releaseDocument).not.toHaveBeenCalled()
+    })
+
+    await openPath(PATH)
+
+    expect(mocks.documentWatch).toHaveBeenCalledOnce()
+    expect(mocks.releaseDocument).toHaveBeenCalledWith(PATH)
+  })
+
+  it('releases the claim when the file cannot be read', async () => {
+    mocks.readFile.mockRejectedValue(new Error('ENOENT'))
+
+    await openPath(PATH)
+
+    expect(mocks.showError).toHaveBeenCalled()
+    expect(mocks.releaseDocument).toHaveBeenCalledWith(PATH)
+  })
+
+  it('releases the claim when the save prompt is cancelled', async () => {
+    useDocumentStore.getState().load({ filePath: '/notes/other.md', text: 'saved', mtimeMs: 1 })
+    useDocumentStore.getState().setDirty(true)
+    mocks.confirmSaveChanges.mockResolvedValue('cancel')
+
+    await openPath(PATH)
+
+    expect(mocks.readFile).not.toHaveBeenCalled()
+    expect(mocks.releaseDocument).toHaveBeenCalledWith(PATH)
+  })
+
+  it('does not claim anything when another window already shows the file', async () => {
+    mocks.revealDocument.mockResolvedValue(true)
+
+    await openPath(PATH)
+
+    expect(mocks.releaseDocument).not.toHaveBeenCalled()
   })
 })
 

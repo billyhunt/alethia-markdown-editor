@@ -33,6 +33,7 @@ export const IPC = {
   windowSetDocument: 'window:setDocument',
   windowSettleOpen: 'window:settleOpen',
   windowRevealDocument: 'window:revealDocument',
+  windowReleaseDocument: 'window:releaseDocument',
   windowRerouteOpen: 'window:rerouteOpen',
   appRendererReady: 'app:rendererReady',
   appGrantDroppedPath: 'app:grantDroppedPath',

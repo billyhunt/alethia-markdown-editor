@@ -60,6 +60,7 @@ const api: MarkdownApi = {
     setDocument: (info) => ipcRenderer.invoke(IPC.windowSetDocument, info),
     settleOpen: () => ipcRenderer.invoke(IPC.windowSettleOpen),
     revealDocument: (filePath) => ipcRenderer.invoke(IPC.windowRevealDocument, filePath),
+    releaseDocument: (filePath) => ipcRenderer.invoke(IPC.windowReleaseDocument, filePath),
     rerouteOpen: (filePath) => ipcRenderer.invoke(IPC.windowRerouteOpen, filePath),
   },
   app: {

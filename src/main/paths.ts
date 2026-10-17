@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { app } from 'electron'
@@ -65,6 +66,23 @@ async function realResolve(target: string): Promise<string> {
 
 /** The real path of a file, which is what identifies a document across windows. */
 export const canonicalPath = (target: string): Promise<string> => realResolve(target)
+
+/**
+ * The same identity, resolved synchronously. Used where a batch of saved paths
+ * must be settled before any window exists, so a launch request cannot
+ * interleave with the restore.
+ */
+export function canonicalPathSync(target: string): string {
+  try {
+    return realpathSync(target)
+  } catch {
+    try {
+      return path.join(realpathSync(path.dirname(target)), path.basename(target))
+    } catch {
+      return target
+    }
+  }
+}
 
 /**
  * Membership is decided on the REAL path only.

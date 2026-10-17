@@ -62,18 +62,29 @@ export async function openPath(
 ): Promise<void> {
   // One document, one window: two editors on the same file would autosave
   // over each other. Checked before the save prompt, which would otherwise
-  // ask about this window's document for nothing.
-  if (!routed && (await api.window.revealDocument(filePath).catch(() => false))) return
-  if (!(await ensureClosable())) return
+  // ask about this window's document for nothing. When main finds no other
+  // window it also claims the file for this one, so a second window asked at
+  // the same moment is sent here instead of opening its own copy.
+  let claimed = false
+  if (!routed) {
+    if (await api.window.revealDocument(filePath).catch(() => false)) return
+    claimed = true
+  }
   try {
-    await adoptFile(filePath)
-    if (preferDocument && !useWorkspaceStore.getState().folderRoot) {
-      // This is transient; a direct-open must not overwrite the user's global
-      // sidebar preference, and the toggle remains one click away.
-      useWorkspaceStore.getState().setSidebarVisible(false)
+    if (!(await ensureClosable())) return
+    try {
+      await adoptFile(filePath)
+      if (preferDocument && !useWorkspaceStore.getState().folderRoot) {
+        // This is transient; a direct-open must not overwrite the user's global
+        // sidebar preference, and the toggle remains one click away.
+        useWorkspaceStore.getState().setSidebarVisible(false)
+      }
+    } catch (error) {
+      await api.dialog.showError({ title: 'Could not open file', message: unwrapIpcError(error) })
     }
-  } catch (error) {
-    await api.dialog.showError({ title: 'Could not open file', message: unwrapIpcError(error) })
+  } finally {
+    // Whether it opened, failed or was cancelled at the save prompt.
+    if (claimed) await api.window.releaseDocument(filePath).catch(() => undefined)
   }
 }
 

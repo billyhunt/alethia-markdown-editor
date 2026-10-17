@@ -1,13 +1,15 @@
 import path from 'node:path'
-import { BrowserWindow, nativeTheme, screen } from 'electron'
+import { app, BrowserWindow, nativeTheme, screen } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { EMPTY_SESSION, type WindowSession } from '../shared/settings.ts'
 import type { OpenPathEvent } from '../shared/api.ts'
+import { canonicalPathSync } from './paths.ts'
 import { hardenWebContents } from './security.ts'
 import { getSettings, patchSettings } from './settings.ts'
 import { closeWatchersFor } from './watcher.ts'
 
-const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+// A packaged app must never be pointed at a dev server by its environment.
+const DEV_SERVER_URL = app.isPackaged ? undefined : process.env.VITE_DEV_SERVER_URL
 const INDEX_HTML = path.join(import.meta.dirname, '../dist/index.html')
 
 interface WindowState {
@@ -23,6 +25,12 @@ interface WindowState {
    * is spoken for: a second file must not be routed into it as well.
    */
   incoming: string | null
+  /**
+   * Files this window's own renderer has claimed and is still opening (user
+   * opens, which main did not route). Claimed before the renderer reads
+   * anything, so two windows asked for one file cannot both start.
+   */
+  opening: string[]
   /** Opens waiting for this window's renderer to start listening. */
   pending: OpenPathEvent[]
   /** Unsaved changes, as last reported by the renderer for the title bar. */
@@ -51,6 +59,7 @@ const stateFor = (win: BrowserWindow): WindowState => {
       session: { ...EMPTY_SESSION },
       filePath: null,
       incoming: null,
+      opening: [],
       pending: [],
       edited: false,
       folder: null,
@@ -110,9 +119,33 @@ export function windowShowing(realPath: string, except?: BrowserWindow): Browser
   for (const win of BrowserWindow.getAllWindows()) {
     if (win === except || win.isDestroyed()) continue
     const state = states.get(win.id)
-    if (state && (state.filePath === realPath || state.incoming === realPath)) return win
+    if (
+      state &&
+      (state.filePath === realPath || state.incoming === realPath || state.opening.includes(realPath))
+    ) {
+      return win
+    }
   }
   return null
+}
+
+/**
+ * Decides, in one synchronous step, who opens a file: the window already
+ * showing or claiming it is returned, otherwise `win` claims it. The check and
+ * the claim must not be separated by an await, or two windows asked at once
+ * would both be told to go ahead and then autosave over each other.
+ */
+export function claimDocument(win: BrowserWindow, realPath: string): BrowserWindow | null {
+  const other = windowShowing(realPath, win)
+  if (!other) stateFor(win).opening.push(realPath)
+  return other
+}
+
+/** Ends a claim, whether the open succeeded, failed or was cancelled. */
+export function releaseDocument(win: BrowserWindow, realPath: string): void {
+  const opening = states.get(win.id)?.opening
+  const index = opening?.indexOf(realPath) ?? -1
+  if (index >= 0) opening?.splice(index, 1)
 }
 
 /**
@@ -133,6 +166,7 @@ export function vacantWindow(): BrowserWindow | null {
       state.filePath === null &&
       state.folder === null &&
       state.incoming === null &&
+      state.opening.length === 0 &&
       state.pending.length === 0 &&
       !state.edited
     ) {
@@ -312,16 +346,22 @@ export function createWindow(session: WindowSession = { ...EMPTY_SESSION }): Bro
  * Reopens the windows from the previous session, or one empty window. With
  * `allowNone`, an empty session opens nothing, because the files the app was
  * launched with will bring windows of their own.
+ *
+ * Saved files are matched by real path, the identity routing uses, so a
+ * session saved as an alias of a file cannot sit beside a request for the file
+ * itself. Resolved up front and synchronously: the windows exist before
+ * anything else can be routed.
  */
 export function restoreWindows({ allowNone = false } = {}): BrowserWindow[] {
   const sessions = getSettings().windows
   if (sessions.length === 0) return allowNone ? [] : [createWindow()]
   // One document, one window, even if a session was saved with a file in two.
   const claimed = new Set<string>()
-  return sessions.map((session) => {
-    if (!session.file) return createWindow(session)
-    if (claimed.has(session.file)) return createWindow({ ...session, file: null })
-    claimed.add(session.file)
-    return createWindow(session)
+  return sessions.map((saved) => {
+    if (!saved.file) return createWindow(saved)
+    const file = canonicalPathSync(saved.file)
+    if (claimed.has(file)) return createWindow({ ...saved, file: null })
+    claimed.add(file)
+    return createWindow({ ...saved, file })
   })
 }

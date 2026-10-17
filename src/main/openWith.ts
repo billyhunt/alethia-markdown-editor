@@ -60,29 +60,34 @@ export async function enqueuePath(input: string): Promise<boolean> {
 }
 
 /**
- * Sends a path to the right window.
+ * Sends a path to the right window, which is returned. That window ends up in
+ * front, behind none of the windows still on their way up.
  *
  * A file already open somewhere just brings that window forward -- opening a
  * second copy of one document would leave two editors autosaving over each
  * other. Otherwise an empty, untouched window takes it, and failing that a new
  * one is created, which is what makes several documents open side by side.
  */
-export function route(event: OpenPathEvent): void {
-  const existing = event.kind === 'file' ? windowShowing(event.path) : null
-  if (existing) {
-    raise(existing)
-    return
-  }
+export function route(event: OpenPathEvent): BrowserWindow {
+  const target = chooseWindow(event)
+  bringToFront(target)
+  return target
+}
 
-  const target = vacantWindow()
-  if (target) {
-    deliver(target, event)
-    raise(target)
-    return
+function chooseWindow(event: OpenPathEvent): BrowserWindow {
+  const existing = event.kind === 'file' ? windowShowing(event.path) : null
+  if (existing) return existing
+
+  const vacant = vacantWindow()
+  if (vacant) {
+    deliver(vacant, event)
+    return vacant
   }
 
   // A new window shows itself, in front, once it has painted.
-  deliver(createWindow(), event)
+  const created = createWindow()
+  deliver(created, event)
+  return created
 }
 
 /**
@@ -97,48 +102,46 @@ export function startUp(): void {
   const opens = launched.splice(0)
   restoreWindows({ allowNone: opens.length > 0 })
   for (const event of opens) route(event)
-
-  const last = opens.at(-1)
-  const front = last && (last.kind === 'file' ? windowShowing(last.path) : null)
-  if (front) raiseAfterEveryWindowShows(front)
 }
 
 /**
- * Restored windows show themselves as they finish painting, in whatever order
- * that happens, and each one shown lands on top. So the window that has to be
- * in front is raised once more after the last of them appears.
+ * Windows show themselves as they finish painting, in whatever order that
+ * happens, and each one shown lands on top -- restored sessions and rapid
+ * opens alike. So the newest request is raised again once the windows ahead
+ * of it have all shown, rather than whichever happened to paint last winning.
  */
-function raiseAfterEveryWindowShows(front: BrowserWindow): void {
-  const waiting = BrowserWindow.getAllWindows().filter((win) => !hasShown(win))
-  let remaining = waiting.length
-  const done = (): void => {
-    remaining -= 1
-    if (remaining === 0) raise(front)
+const PAINT_GRACE_MS = 5000
+let newest: BrowserWindow | null = null
+const awaitingPaint = new Map<BrowserWindow, NodeJS.Timeout>()
+const listening = new WeakSet<BrowserWindow>()
+
+function bringToFront(win: BrowserWindow): void {
+  newest = win
+  // A no-op until it has painted, which is what the wait below is for.
+  raise(win)
+  for (const other of BrowserWindow.getAllWindows()) {
+    if (!hasShown(other)) awaitPaint(other)
   }
-  if (remaining === 0) {
-    raise(front)
-    return
-  }
-  for (const win of waiting) {
-    let counted = false
-    // A window that never paints must not leave the front one buried.
-    const fallback = setTimeout(() => {
-      counted = true
-      done()
-    }, 5000)
-    // Registered after createWindow's own handler, so this runs once the
-    // window's show() has; setImmediate keeps it out of that call stack.
-    win.once('ready-to-show', () => {
-      clearTimeout(fallback)
-      if (!counted) {
-        counted = true
-        setImmediate(done)
-      } else if (remaining === 0) {
-        // Painted after its fallback fired, so it just landed on top.
-        setImmediate(() => raise(front))
-      }
-    })
-  }
+}
+
+function paintSettled(win: BrowserWindow): void {
+  clearTimeout(awaitingPaint.get(win))
+  awaitingPaint.delete(win)
+  if (awaitingPaint.size === 0 && newest) raise(newest)
+}
+
+function awaitPaint(win: BrowserWindow): void {
+  if (awaitingPaint.has(win)) return
+  // A window that never paints must not leave the front one buried.
+  awaitingPaint.set(win, setTimeout(() => paintSettled(win), PAINT_GRACE_MS))
+  if (listening.has(win)) return
+  listening.add(win)
+  // Registered after createWindow's own handler, so this runs once the
+  // window's show() has; setImmediate keeps it out of that call stack. A
+  // window painting after its grace ran out settles again and so lands
+  // underneath the newest request, not on top of it.
+  win.once('ready-to-show', () => setImmediate(() => paintSettled(win)))
+  win.once('closed', () => paintSettled(win))
 }
 
 /**

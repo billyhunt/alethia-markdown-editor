@@ -17,21 +17,23 @@ import { EMPTY_SESSION } from '../shared/settings.ts'
 import { addRecent, clearRecents, listRecents } from './recents.ts'
 import {
   assertReadable,
+  canonicalPath,
   assertReadableDir,
   grantFile,
   grantRoot,
   validatePath,
 } from './paths.ts'
 import {
+  claimDocument,
   markForceClose,
   noteDocument,
   noteEdited,
   noteFolder,
   raise,
+  releaseDocument,
   setQuitting,
   settleIncoming,
   takeSession,
-  windowShowing,
 } from './windows.ts'
 import { route } from './openWith.ts'
 import { showFileContextMenu } from './fileMenu.ts'
@@ -175,10 +177,18 @@ export function registerIpcHandlers(): void {
     const win = winOf(event)
     // An unreadable path is shown nowhere; the open that follows reports it.
     const target = await assertReadable(filePath).catch(() => null)
-    const other = target ? windowShowing(target, win ?? undefined) : null
+    if (!win || !target) return false
+    // Check and claim in one step (no await between): the window that asks
+    // second is sent to the first rather than opening its own copy. The
+    // renderer ends the claim with releaseDocument once its open is over.
+    const other = claimDocument(win, target)
     if (!other) return false
     raise(other)
     return true
+  })
+  ipcMain.handle(IPC.windowReleaseDocument, async (event, filePath: unknown) => {
+    const win = winOf(event)
+    if (win) releaseDocument(win, await canonicalPath(validatePath(filePath)))
   })
 
   ipcMain.handle(IPC.windowRerouteOpen, async (event, filePath: unknown) => {

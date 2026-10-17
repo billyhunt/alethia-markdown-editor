@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { setImmediate as nextTick } from 'node:timers/promises'
 import type { WindowSession } from '../../src/shared/settings.ts'
 
 /**
@@ -16,6 +17,7 @@ const electron = vi.hoisted(() => {
   class FakeWindow {
     static all: FakeWindow[] = []
     static raised: number[] = []
+    static loaded: string[] = []
     static nextId = 1
     static getAllWindows = (): FakeWindow[] => FakeWindow.all.filter((win) => !win.destroyed)
     static getFocusedWindow = (): FakeWindow | null => null
@@ -73,17 +75,24 @@ const electron = vi.hoisted(() => {
     isDestroyed = (): boolean => this.destroyed
     isFullScreen = (): boolean => false
     getNormalBounds = () => ({ x: 0, y: 0, width: 900, height: 600 })
-    loadFile = (): Promise<void> => Promise.resolve()
-    loadURL = (): Promise<void> => Promise.resolve()
+    loadFile = (): Promise<void> => {
+      FakeWindow.loaded.push('file')
+      return Promise.resolve()
+    }
+    loadURL = (url: string): Promise<void> => {
+      FakeWindow.loaded.push(url)
+      return Promise.resolve()
+    }
   }
 
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   const settings = { windows: [] as WindowSession[] }
-  return { FakeWindow, handlers, settings }
+  const app = { isPackaged: true, getVersion: () => '0.0.0', getPath: () => '/tmp' }
+  return { FakeWindow, handlers, settings, app }
 })
 
 vi.mock('electron', () => ({
-  app: { isPackaged: true, getVersion: () => '0.0.0', getPath: () => '/tmp' },
+  app: electron.app,
   BrowserWindow: electron.FakeWindow,
   ipcMain: {
     handle: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) =>
@@ -134,6 +143,7 @@ beforeAll(async () => {
     await fs.writeFile(file(name), `# ${name}`)
   }
   await fs.symlink(root, file('alias'))
+  await fs.symlink(file('one.md'), file('link.md'))
 })
 
 afterAll(async () => {
@@ -144,6 +154,8 @@ beforeEach(async () => {
   // Fresh module state (the started flag, window states, path grants) per test.
   vi.resetModules()
   electron.FakeWindow.all = []
+  electron.FakeWindow.loaded = []
+  electron.app.isPackaged = true
   electron.FakeWindow.raised = []
   electron.FakeWindow.nextId = 1
   electron.handlers.clear()
@@ -445,5 +457,234 @@ describe('closing', () => {
     win.emit('close', event)
     expect(event.preventDefault).toHaveBeenCalled()
     expect(win.sent.map((m) => m.channel)).toContain(IPC.hostCloseRequested)
+  })
+})
+
+describe('one editor per document', () => {
+  let first: FakeWindow
+  let second: FakeWindow
+
+  beforeEach(async () => {
+    electron.settings.windows = [session({}), session({})]
+    // Lets the windows read the files below without routing anything to them.
+    ;(await import('../../src/main/paths.ts')).grantRoot(root)
+    openWith.startUp()
+    ;[first, second] = all()
+    for (const win of all()) {
+      paint(win)
+      await rendererReady(win)
+    }
+    electron.FakeWindow.raised = []
+  })
+
+  it('lets only one of two windows asked at once open the file', async () => {
+    const answers = await Promise.all([
+      invoke(first, IPC.windowRevealDocument, file('one.md')),
+      invoke(second, IPC.windowRevealDocument, file('one.md')),
+    ])
+
+    // Exactly one is told to open it; the other is sent to that window.
+    expect(answers.filter((answer) => answer === false)).toHaveLength(1)
+    expect(answers.filter((answer) => answer === true)).toHaveLength(1)
+    const opener = answers[0] === false ? first : second
+    const other = opener === first ? second : first
+    expect(lastRaised()).toBe(opener.id)
+    expect(windows.windowShowing(file('one.md'))).toBe(opener)
+    // And a launch request for it goes to the claimant too.
+    await openWith.enqueuePath(file('one.md'))
+    expect(lastRaised()).toBe(opener.id)
+    expect(sentOpens(other)).toEqual([])
+  })
+
+  it('frees the file when the open is released without ever showing it', async () => {
+    expect(await invoke(first, IPC.windowRevealDocument, file('one.md'))).toBe(false)
+    expect(await invoke(second, IPC.windowRevealDocument, file('one.md'))).toBe(true)
+
+    // The first window's open failed, or was cancelled at the save prompt.
+    await invoke(first, IPC.windowReleaseDocument, file('one.md'))
+
+    expect(windows.windowShowing(file('one.md'))).toBeNull()
+    expect(await invoke(second, IPC.windowRevealDocument, file('one.md'))).toBe(false)
+  })
+
+  it('keeps pointing at the window once it shows the file, after the claim is released', async () => {
+    await invoke(first, IPC.windowRevealDocument, file('one.md'))
+    await showsDocument(first, file('one.md'))
+    await invoke(first, IPC.windowReleaseDocument, file('one.md'))
+
+    expect(await invoke(second, IPC.windowRevealDocument, file('one.md'))).toBe(true)
+    expect(lastRaised()).toBe(first.id)
+  })
+
+  it('does not hand a window mid-open a launched file', async () => {
+    await invoke(first, IPC.windowRevealDocument, file('one.md'))
+    await openWith.enqueuePath(file('three.md'))
+
+    expect(sentOpens(first)).toEqual([])
+    expect(sentOpens(second)).toEqual([file('three.md')])
+  })
+
+  it('brings forward the window showing a file reached through a symlink to it', async () => {
+    await showsDocument(first, file('one.md'))
+    electron.FakeWindow.raised = []
+
+    await openWith.enqueuePath(file('link.md'))
+
+    expect(all()).toHaveLength(2)
+    expect(lastRaised()).toBe(first.id)
+    expect(sentOpens(second)).toEqual([])
+  })
+})
+
+describe('restored sessions are matched by real path', () => {
+  it('opens a launched file in the window that restored it through an alias', async () => {
+    electron.settings.windows = [session({ file: path.join(root, 'alias', 'old.md') })]
+    await openWith.enqueuePath(file('old.md'))
+    openWith.startUp()
+
+    expect(all()).toHaveLength(1)
+    expect(windows.windowShowing(file('old.md'))).toBe(all()[0])
+    expect(await rendererReady(all()[0])).toEqual([])
+  })
+
+  it('restores a document saved under two spellings into only one window', async () => {
+    electron.settings.windows = [
+      session({ file: path.join(root, 'alias', 'one.md') }),
+      session({ file: file('one.md') }),
+    ]
+    openWith.startUp()
+    const [first, second] = all()
+
+    expect(windows.windowShowing(file('one.md'))).toBe(first)
+    const restored = async (win: FakeWindow) =>
+      ((await invoke(win, IPC.appRendererReady)) as { session: WindowSession }).session.file
+    expect(await restored(first)).toBe(file('one.md'))
+    expect(await restored(second)).toBeNull()
+  })
+})
+
+describe('window order', () => {
+  it('keeps the newest of several rapid opens in front whatever order they paint in', async () => {
+    openWith.startUp()
+    const requests = [file('one.md'), file('two.md'), file('three.md')]
+    for (const f of requests) await openWith.enqueuePath(f)
+    const [oldest, middle, newest] = all()
+
+    paint(newest)
+    paint(middle)
+    paint(oldest)
+    await nextTick()
+
+    expect(lastRaised()).toBe(newest.id)
+  })
+
+  it('puts a re-opened file in front of windows that are still painting', async () => {
+    openWith.startUp()
+    const [shown] = all()
+    await rendererReady(shown)
+    paint(shown)
+    await openWith.enqueuePath(file('one.md'))
+    await showsDocument(shown, file('one.md'))
+    await openWith.enqueuePath(file('two.md')) // a new window, still painting
+    const painting = all()[1]
+    await openWith.enqueuePath(file('one.md')) // ...but the user asked for this one last
+
+    paint(painting)
+    await nextTick()
+
+    expect(lastRaised()).toBe(shown.id)
+  })
+
+  it('puts a launched folder in front of restored windows, as it does a file', async () => {
+    electron.settings.windows = [session({ folder: root })]
+    await openWith.enqueuePath(root)
+    openWith.startUp()
+    const [restored, folder] = all()
+
+    paint(folder)
+    paint(restored)
+    await nextTick()
+
+    expect(lastRaised()).toBe(folder.id)
+  })
+
+  it('returns the window the open went to', async () => {
+    openWith.startUp()
+    const [empty] = all()
+    await rendererReady(empty)
+
+    expect(openWith.route({ path: file('one.md'), kind: 'file' })).toBe(empty)
+    expect(openWith.route({ path: file('one.md'), kind: 'file' })).toBe(empty)
+    expect(openWith.route({ path: file('two.md'), kind: 'file' })).toBe(all()[1])
+  })
+})
+
+describe('a launched file and a restored workspace', () => {
+  it('does not leave the workspace stored against the launched file', async () => {
+    electron.settings.windows = [session({ folder: root })]
+    await openWith.enqueuePath(file('one.md'))
+    openWith.startUp()
+    const [restored, launched] = all()
+    await rendererReady(restored)
+    await rendererReady(launched)
+    await showsDocument(launched, file('one.md'))
+
+    windows.persistSessions()
+
+    expect(electron.settings.windows.map((w) => [w.folder, w.file])).toEqual([
+      [root, null],
+      [null, file('one.md')],
+    ])
+  })
+})
+
+describe('loading the app', () => {
+  const DEV_URL = 'http://localhost:5173'
+
+  const loadsWith = async (isPackaged: boolean): Promise<string[]> => {
+    process.env.VITE_DEV_SERVER_URL = DEV_URL
+    try {
+      electron.app.isPackaged = isPackaged
+      vi.resetModules()
+      ;(await import('../../src/main/windows.ts')).createWindow()
+      return electron.FakeWindow.loaded
+    } finally {
+      delete process.env.VITE_DEV_SERVER_URL
+    }
+  }
+
+  it('ignores a dev server in the environment of a packaged app', async () => {
+    expect(await loadsWith(true)).toEqual(['file'])
+  })
+
+  it('uses the dev server when running unpackaged', async () => {
+    expect(await loadsWith(false)).toEqual([DEV_URL])
+  })
+})
+
+describe('passing a routed file on', () => {
+  it('refuses a file when none was routed to the window', async () => {
+    openWith.startUp()
+    const [win] = all()
+    await rendererReady(win)
+    // Grants the folder so only the routing check can refuse.
+    ;(await import('../../src/main/paths.ts')).grantRoot(root)
+
+    await expect(invoke(win, IPC.windowRerouteOpen, file('one.md'))).rejects.toThrow(
+      'not the file routed to this window',
+    )
+    expect(all()).toHaveLength(1)
+  })
+
+  it('refuses a different file than the one routed, even one it may read', async () => {
+    openWith.startUp()
+    const [win] = all()
+    await rendererReady(win)
+    await openWith.enqueuePath(file('one.md'))
+
+    await expect(invoke(win, IPC.windowRerouteOpen, file('two.md'))).rejects.toThrow(
+      'not the file routed to this window',
+    )
+    expect(all()).toHaveLength(1)
   })
 })
