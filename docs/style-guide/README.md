@@ -97,7 +97,7 @@ uses, so code can move between the app and anything built on `alethia.css`.
 | `--accent` | `#b52900` | `#ff5722` | Orange that has to be readable as text on the ground: bullets, list numbers, caret, status identity, focus |
 | `--accent-hot` | `#ff3b00` | `#ff3b00` | Orange as a fill: current row, hover, banners, links, the dirty mark, strong underline |
 | `--on-hot` | `#111111` | `#111111` | Text on `--accent-hot` *(export addition)* |
-| `--on-accent` | `#f2f0eb` | `#111111` | Text on `--accent` *(export addition)* |
+| `--on-accent` | `#f2f0eb` | `#111111` | Text on `--accent` (inline code) |
 | `--selection` | `#f5e0d6` | `#4a2418` | Text selection, row hover |
 | `--code-bg` | `#111111` | `#000000` | Code well |
 | `--code-fg` | `#f2f0eb` | `#f2f0eb` | Plain code text |
@@ -142,8 +142,8 @@ Rules:
 | Ink on hot | 5.29 | AA |
 | Hot on paper | **3.14** | Fails for text. Fills only. |
 | Paper on rust (light inline code) | 5.62 | AA |
-| Ink on hot light (dark inline code, export) | 5.97 | AA |
-| Paper on hot light (dark inline code, app today) | **2.78** | Fails. See §12. |
+| Ink on hot light (dark inline code) | 5.97 | AA |
+| Paper on hot light | **2.78** | Fails. Never put paper text on the dark-mode accent. |
 | Ink on blush | 14.85 | AAA |
 | Paper on ember | 11.84 | AAA |
 | Sand on black | 13.61 | AAA |
@@ -569,7 +569,7 @@ The export fixes or extends a few things that the app does not do yet:
 
 | Topic | App today | This guide |
 |---|---|---|
-| Inline code in dark mode | Paper text on `#ff5722`: **2.78:1**, fails AA | `--on-accent` flips to ink in dark mode: 5.97:1. The app should adopt `--on-accent`. |
+| Inline code in dark mode | Fixed on `fix/dark-inline-code`: the app gains `--on-accent`, so dark inline code is ink on `#ff5722` (5.97:1). Before that it was paper (2.78:1). | Same |
 | Keyboard focus | No visible focus style on chrome buttons | 2px `--accent` outline, offset 2px, on `:focus-visible` |
 | Link hover | None (links open with ⌘-click) | Inverts to an ink band |
 | Disabled button | Not used | Dashed 2px rule, muted text, no hover |
