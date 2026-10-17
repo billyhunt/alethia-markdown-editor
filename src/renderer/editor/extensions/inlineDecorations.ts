@@ -55,6 +55,24 @@ function childrenNamed(node: SyntaxNode, name: string): SyntaxNode[] {
 const firstNamed = (node: SyntaxNode, name: string): SyntaxNode | null =>
   childrenNamed(node, name)[0] ?? null
 
+/**
+ * A quote's own `>` marks. Only the first line's mark is a direct child: on
+ * later lines lezer puts it inside the paragraph or list it continues. A
+ * nested quote's marks are left to that quote, so none is hidden twice.
+ */
+function quoteMarksOf(quote: SyntaxNode): SyntaxNode[] {
+  const out: SyntaxNode[] = []
+  const walk = (node: SyntaxNode): void => {
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.name === 'QuoteMark') out.push(child)
+      // Code text is the fence's content, even when it is itself markdown.
+      else if (child.name !== 'Blockquote' && child.name !== 'CodeText') walk(child)
+    }
+  }
+  walk(quote)
+  return out
+}
+
 export function buildDecorations(view: EditorView): Built {
   const built: Built = { decorations: [], atomic: [] }
   const { state } = view
@@ -81,6 +99,9 @@ export function buildDecorations(view: EditorView): Built {
   // Lists are claimed innermost-first so a nested item's indentation is hidden
   // against its own content column rather than its ancestor's.
   const claimedLines = new Set<number>()
+  // How far each list line's hidden indentation reaches, so a quote marker
+  // already inside it is not hidden a second time.
+  const indentHiddenTo = new Map<number, number>()
 
   for (const { from, to } of view.visibleRanges) {
     // --- pass 1: list structure ------------------------------------------
@@ -117,6 +138,7 @@ export function buildDecorations(view: EditorView): Built {
         )
         // Leading indentation is layout, not content, so it is always hidden.
         hide(built, markerLine.from, mark.from)
+        indentHiddenTo.set(markerLine.from, mark.from)
       }
 
       // Continuation lines of this item align with its text.
@@ -125,7 +147,9 @@ export function buildDecorations(view: EditorView): Built {
         if (claimedLines.has(n)) continue
         claimedLines.add(n)
         const line = state.doc.line(n)
-        const leading = line.text.length - line.text.trimStart().length
+        // Inside a quote the line starts with its `>` markers, which count
+        // toward the item's content column like spaces do.
+        const leading = /^[ \t>]*/.exec(line.text)![0].length
         built.decorations.push(
           Decoration.line({
             class: 'cm-md-li',
@@ -133,6 +157,7 @@ export function buildDecorations(view: EditorView): Built {
           }).range(line.from),
         )
         hide(built, line.from, line.from + Math.min(contentCol, leading))
+        indentHiddenTo.set(line.from, line.from + Math.min(contentCol, leading))
       }
     }
 
@@ -298,8 +323,9 @@ export function buildDecorations(view: EditorView): Built {
             // The `>` is never revealed: it is structure rather than text,
             // and Enter and Backspace already maintain the quote via
             // markdownKeymap.
-            for (const mark of childrenNamed(node, 'QuoteMark')) {
+            for (const mark of quoteMarksOf(node)) {
               const line = state.doc.lineAt(mark.from)
+              if ((indentHiddenTo.get(line.from) ?? -1) >= mark.to) continue
               hideMarkerAndSpace(mark.from, mark.to, line.to)
             }
             return true
