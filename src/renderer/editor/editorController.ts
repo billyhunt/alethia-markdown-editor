@@ -3,6 +3,7 @@ import { EditorSelection } from '@codemirror/state'
 import { createEditorState } from './createEditor.ts'
 import { EDITOR_COMMANDS } from './commands.ts'
 import { focusMode, modesCompartment, typewriterMode } from './extensions/modes.ts'
+import { useDocumentStore } from '../state/documentStore.ts'
 import type { EditorCommand } from '../../shared/ipc.ts'
 
 /**
@@ -48,6 +49,9 @@ class EditorController {
 
   /** Notifies listeners without an edit, e.g. after loading a document. */
   private emit(text: string): void {
+    // This state is read by close/replace/quit handlers, so it must follow
+    // every editor transaction synchronously rather than through a UI timer.
+    useDocumentStore.getState().setDirty(text !== useDocumentStore.getState().savedText)
     for (const listener of this.docListeners) listener(text)
   }
 

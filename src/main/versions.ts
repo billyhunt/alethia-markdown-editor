@@ -68,6 +68,49 @@ const hashOf = (content: string): string =>
 
 const dirFor = (filePath: string): string => path.join(versionsRoot(), keyFor(filePath))
 
+/** Moves the local history directory when its document changes paths. */
+export async function moveVersionHistory(from: string, to: string): Promise<void> {
+  const source = dirFor(from)
+  const destination = dirFor(to)
+  try {
+    await fs.rename(source, destination)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    if (!['EEXIST', 'ENOTEMPTY'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
+    // A file may have history from an earlier time at its new path. Keep both
+    // sets and give any colliding snapshot a fresh, increasing timestamp.
+    for (const name of await fs.readdir(source)) {
+      if (name === 'origin.json') continue
+      const oldPath = path.join(source, name)
+      let target = path.join(destination, name)
+      try {
+        await fs.link(oldPath, target)
+      } catch (linkError) {
+        if ((linkError as NodeJS.ErrnoException).code !== 'EEXIST') throw linkError
+        const match = VERSION_FILE.exec(name)
+        if (!match) continue
+        for (let stamp = Math.max(Date.now(), Number(match[1]) + 1); ; stamp++) {
+          target = path.join(destination, `${stamp}-${match[2]}.snapshot`)
+          try {
+            await fs.link(oldPath, target)
+            break
+          } catch (retryError) {
+            if ((retryError as NodeJS.ErrnoException).code !== 'EEXIST') throw retryError
+          }
+        }
+      }
+      await fs.unlink(oldPath)
+    }
+    await fs.rm(source, { recursive: true, force: true })
+  }
+  const movedStamp = lastStamp.get(source) ?? 0
+  const destinationStamp = lastStamp.get(destination) ?? 0
+  const existingStamp = Math.max(0, ...(await entriesFor(to)).map((version) => version.savedAt))
+  lastStamp.delete(source)
+  lastStamp.set(destination, Math.max(movedStamp, destinationStamp, existingStamp))
+  await fs.writeFile(path.join(destination, 'origin.json'), JSON.stringify({ path: to }, null, 2))
+}
+
 /**
  * The newest stamp handed out per file.
  *
