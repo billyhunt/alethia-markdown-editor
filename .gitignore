@@ -29,3 +29,5 @@ release
 
 # Test artefacts
 coverage
+test-results
+playwright-report
