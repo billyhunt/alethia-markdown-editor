@@ -51,19 +51,17 @@ it('refuses a save that waited for a rename of its path', async () => {
   const rename = renameFile(from, 'queued-renamed.md')
   await linking.promise
 
-  // The save's only I/O before it queues is resolving its path; once that
-  // returns, nothing but microtasks stand between it and the lock.
-  const originalRealpath = fs.realpath.bind(fs)
-  const resolving = Promise.withResolvers<void>()
-  vi.spyOn(fs, 'realpath').mockImplementation(async (...args: Parameters<typeof fs.realpath>) => {
-    const result = await originalRealpath(...args)
-    if (args[0] === from) resolving.resolve()
-    return result
-  })
+  // The save checks its path before it joins the queue, and each of those
+  // checks is a round trip to the disk, so no fixed wait can say when it is
+  // queued. Every path in this test is already canonical, so answer realpath
+  // without touching the disk: then only microtasks lie between the call and
+  // the lock, and the event loop cannot reach nextTurn() until the save is
+  // waiting behind the rename.
+  const realpath = vi.spyOn(fs, 'realpath').mockImplementation(async (target) => String(target))
   const save = writeTextFile(from, 'content meant for the old name')
   const refused = expect(save).rejects.toThrow(/ESTALE/)
-  await resolving.promise
   await nextTurn()
+  expect(realpath).toHaveBeenCalledWith(from)
 
   gate.resolve()
   const renamed = await rename

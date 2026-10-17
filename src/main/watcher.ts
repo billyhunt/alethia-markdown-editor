@@ -39,23 +39,52 @@ const emit = (win: BrowserWindow, channel: string, payload: unknown): void => {
   if (!win.isDestroyed()) win.webContents.send(channel, payload)
 }
 
+/**
+ * chokidar.watch() returns at once, but nothing is being watched yet: the
+ * initial stat and the registration with the OS are asynchronous, and a change
+ * made in that gap is never reported. 'ready' is the point at which the watch
+ * is real, so callers must not be told it is until then.
+ *
+ * close() drops every listener, so a watcher closed while it is still starting
+ * would never say ready; closeWatcher() releases whoever is waiting first.
+ */
+const startup = new WeakMap<FSWatcher, () => void>()
+
+const armed = (watcher: FSWatcher): Promise<void> =>
+  new Promise((resolve) => {
+    const release = (): void => resolve()
+    startup.set(watcher, release)
+    watcher.once('ready', release)
+    // chokidar reports an unreadable path as an error before it gets to ready.
+    watcher.once('error', release)
+  })
+
+async function closeWatcher(watcher: FSWatcher | null): Promise<void> {
+  if (!watcher) return
+  startup.get(watcher)?.()
+  await watcher.close()
+}
+
 export async function watchDocument(win: BrowserWindow, filePath: string): Promise<void> {
   filePath = await fs.realpath(filePath).catch(() => filePath)
   const entry = watchersFor(win.id)
-  await entry.doc?.close()
+  await closeWatcher(entry.doc)
 
-  entry.doc = chokidar.watch(filePath, {
+  const watcher = chokidar.watch(filePath, {
     ignoreInitial: true,
     atomic: true,
     awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
   })
+  entry.doc = watcher
 
-  entry.doc.on('change', () => {
+  watcher.on('change', () => {
     void handleDocChange(win, filePath)
   })
-  entry.doc.on('unlink', () => {
+  watcher.on('unlink', () => {
     emit(win, IPC.hostFileChanged, { path: filePath, kind: 'removed' } satisfies FileChangeEvent)
   })
+
+  await armed(watcher)
 }
 
 /**
@@ -96,7 +125,7 @@ async function handleDocChange(win: BrowserWindow, filePath: string): Promise<vo
 export async function unwatchDocument(win: BrowserWindow): Promise<void> {
   const entry = perWindow.get(win.id)
   if (!entry) return
-  await entry.doc?.close()
+  await closeWatcher(entry.doc)
   entry.doc = null
 }
 
@@ -149,7 +178,7 @@ export async function closeWatchersFor(windowId: number): Promise<void> {
   const entry = perWindow.get(windowId)
   if (!entry) return
   perWindow.delete(windowId)
-  await entry.doc?.close()
+  await closeWatcher(entry.doc)
   await closeFolder(entry)
 }
 
