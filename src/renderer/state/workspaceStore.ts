@@ -11,6 +11,8 @@ export interface WorkspaceState {
   folderRoot: string | null
   tree: FileNode | null
   truncated: boolean
+  /** Workspace folders opened before, newest first. The vault switcher. */
+  recentFolders: string[]
   sidebarVisible: boolean
   sidebarWidth: number
   sidebarTab: 'files' | 'outline' | 'history'
@@ -27,6 +29,7 @@ export interface WorkspaceState {
   notice: { message: string; actions: Array<{ label: string; run: () => void }> } | null
 
   setFolder: (folder: FolderTree | null) => void
+  setRecentFolders: (folders: string[]) => void
   setSidebarVisible: (visible: boolean) => void
   setSidebarWidth: (width: number) => void
   setSidebarTab: (tab: 'files' | 'outline' | 'history') => void
@@ -44,6 +47,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   folderRoot: null,
   tree: null,
   truncated: false,
+  recentFolders: [],
   sidebarVisible: true,
   sidebarWidth: 260,
   sidebarTab: 'files',
@@ -63,6 +67,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       tree: folder?.tree ?? null,
       truncated: folder?.truncated ?? false,
     }),
+  setRecentFolders: (recentFolders) => set({ recentFolders }),
   setSidebarVisible: (sidebarVisible) => set({ sidebarVisible }),
   setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
   setSidebarTab: (sidebarTab) => set({ sidebarTab }),

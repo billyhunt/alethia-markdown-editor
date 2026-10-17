@@ -65,6 +65,22 @@ export interface StatResult {
   size: number
 }
 
+export interface CreateFileOptions {
+  /** A granted directory. Null or omitted uses the app's default folder. */
+  dir?: string | null
+  /** A basename, not a path. A markdown extension is added if missing. */
+  name: string
+  /** Written as part of creating the file, so no empty file can be left. */
+  content?: string
+  lineEnding?: LineEnding
+}
+
+export interface CreateFileResult {
+  /** The path actually created, which may be numbered. */
+  path: string
+  mtimeMs: number
+}
+
 export type SaveChangesChoice = 'save' | 'dontSave' | 'cancel'
 
 export interface SaveAsOptions {
@@ -113,6 +129,15 @@ export type FileContextResult =
   | { action: 'history'; path: string }
   | { action: 'trashed'; path: string }
 
+/** What the workspace switcher menu was asked to do. */
+export type FolderSwitcherResult =
+  | { action: 'cancelled' }
+  /** Adopt this already-granted folder as the workspace. */
+  | { action: 'switch'; path: string }
+  /** Show the directory dialog instead. */
+  | { action: 'open' }
+  | { action: 'cleared' }
+
 /** One past state of a document, newest first in listings. */
 export interface DocumentVersion {
   /** Opaque; pass back to read a version. */
@@ -152,6 +177,11 @@ export interface MarkdownApi {
      * a markdown extension is enforced. Resolves the new absolute path.
      */
     rename(path: string, name: string): Promise<RenameFileResult>
+    /**
+     * Creates a markdown file holding `content` and grants it, numbering the
+     * name if it is taken. Never overwrites; creation is exclusive.
+     */
+    createFile(opts: CreateFileOptions): Promise<CreateFileResult>
   }
 
   folder: {
@@ -171,6 +201,10 @@ export interface MarkdownApi {
     list(): Promise<string[]>
     add(path: string): Promise<void>
     clear(): Promise<void>
+    /** Workspace folders, newest first, with vanished ones already dropped. */
+    listFolders(): Promise<string[]>
+    addFolder(path: string): Promise<void>
+    clearFolders(): Promise<void>
   }
 
   settings: {
@@ -243,6 +277,11 @@ export interface MarkdownApi {
      * action in main. Resolves once the menu closes.
      */
     fileContext(target: { path: string; kind: PathKind }): Promise<FileContextResult>
+    /**
+     * Pops the workspace switcher: recent folders, plus Open Folder. Resolves
+     * once the menu closes.
+     */
+    folderSwitcher(opts?: { current?: string | null }): Promise<FolderSwitcherResult>
   }
 
   shell: {
@@ -258,5 +297,7 @@ export interface MarkdownApi {
     folderTree(cb: (t: FolderTree) => void): Unsubscribe
     closeRequested(cb: (e: CloseRequestedEvent) => void): Unsubscribe
     fullScreenChanged(cb: (isFullScreen: boolean) => void): Unsubscribe
+    /** Recents are application-wide; every window hears about a change. */
+    recentFoldersChanged(cb: (folders: string[]) => void): Unsubscribe
   }
 }

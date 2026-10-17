@@ -23,10 +23,15 @@ vi.mock('../../src/main/commands.ts', () => ({
   sendCommand: (...args: unknown[]) => sendCommand(...args),
   focusedWindow: () => FOCUSED,
 }))
-vi.mock('../../src/main/windows.ts', () => ({ createWindow: vi.fn() }))
+const deliver = vi.fn()
+vi.mock('../../src/main/windows.ts', () => ({
+  createWindow: vi.fn(() => ({ id: 2 })),
+  deliver: (...args: unknown[]) => deliver(...args),
+}))
 vi.mock('../../src/main/theme.ts', () => ({ applyTheme: vi.fn() }))
+const settings = { theme: 'system', recentFolders: [] as string[] }
 vi.mock('../../src/main/settings.ts', () => ({
-  getSettings: () => ({ theme: 'system' }),
+  getSettings: () => settings,
   patchSettings: vi.fn(),
 }))
 
@@ -54,6 +59,8 @@ function click(entry: MenuItemConstructorOptions): void {
 }
 
 beforeEach(() => {
+  settings.recentFolders = []
+  deliver.mockClear()
   openExternal.mockClear()
   sendCommand.mockClear()
   buildApplicationMenu()
@@ -113,5 +120,21 @@ describe('Help', () => {
     expect(openExternal).toHaveBeenCalledWith(
       'https://github.com/billyhunt/alethia-markdown-editor',
     )
+  })
+})
+
+describe('Open Recent Folder', () => {
+  it('is disabled until a folder has been opened', () => {
+    expect(item('File', 'Open Recent Folder').enabled).toBe(false)
+  })
+
+  it('routes a chosen folder to the frontmost window like any other open', () => {
+    settings.recentFolders = ['/Users/me/notes']
+    buildApplicationMenu()
+    const entry = (item('File', 'Open Recent Folder').submenu as MenuItemConstructorOptions[])[0]
+    expect(entry.label).toBe('notes')
+
+    entry.click?.(undefined as never, undefined as never, undefined as never)
+    expect(deliver).toHaveBeenCalledWith(FOCUSED, { path: '/Users/me/notes', kind: 'dir' })
   })
 })

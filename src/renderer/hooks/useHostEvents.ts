@@ -2,7 +2,13 @@ import { useEffect } from 'react'
 import { api } from '../api.ts'
 import { dispatchHostCommand } from '../services/commandDispatcher.ts'
 import { handleFileChange } from '../services/externalChanges.ts'
-import { adoptFolder, ensureClosable, openPath, openRouted } from '../services/fileOps.ts'
+import {
+  adoptFolder,
+  ensureClosable,
+  openPath,
+  openRouted,
+  refreshRecentFolders,
+} from '../services/fileOps.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import { useDocumentStore } from '../state/documentStore.ts'
 import { editorController } from '../editor/editorController.ts'
@@ -32,6 +38,10 @@ export function useHostEvents(): void {
       api.on.fullScreenChanged((isFullScreen) => {
         document.body.classList.toggle('is-fullscreen', isFullScreen)
       }),
+      // Another window opening a folder changes this one's switcher too.
+      api.on.recentFoldersChanged((folders) =>
+        useWorkspaceStore.getState().setRecentFolders(folders),
+      ),
     ]
 
     void api.app.rendererReady().then(async (ready) => {
@@ -40,6 +50,10 @@ export function useHostEvents(): void {
       workspace.setSidebarWidth(ready.settings.sidebar.width)
       workspace.setToolbarVisible(ready.settings.toolbarVisible)
       workspace.setAutosave(ready.settings.autosave)
+      // Deliberately not awaited: it stats every remembered folder, and one
+      // of them on a sleeping network share must not hold up restoring the
+      // document this window was showing.
+      void refreshRecentFolders()
 
       // A path handed to us by Finder or argv wins over restoring last session.
       // This window's own session, rather than one application-wide pair.
@@ -85,8 +99,11 @@ export function useHostEvents(): void {
 function showWelcomeDocument(): void {
   editorController.setDocument(welcomeText)
   // Left untitled deliberately: Save prompts for a location rather than
-  // writing back into the app bundle.
-  useDocumentStore.getState().load({ filePath: null, text: welcomeText, mtimeMs: null })
+  // writing back into the app bundle. It is also not auto-named -- the tour
+  // is the app's text, not a document the user started.
+  useDocumentStore
+    .getState()
+    .load({ filePath: null, text: welcomeText, mtimeMs: null, autoNameable: false })
 }
 
 /** Mirrors document identity and dirty state into the native title bar. */

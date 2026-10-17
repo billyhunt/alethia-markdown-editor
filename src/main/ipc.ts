@@ -3,7 +3,7 @@ import path from 'node:path'
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { isReadablePath } from '../shared/markdown.ts'
-import { readTextFile, renameFile, statPath, writeTextFile } from './files.ts'
+import { createNamedFile, readTextFile, renameFile, statPath, writeTextFile } from './files.ts'
 import { listMarkdownTree } from './folder.ts'
 import {
   confirmSaveChanges,
@@ -15,11 +15,20 @@ import {
 } from './dialogs.ts'
 import { getSettings, patchUiSettings } from './settings.ts'
 import { EMPTY_SESSION } from '../shared/settings.ts'
-import { addRecent, clearRecents, listRecents } from './recents.ts'
+import {
+  addRecent,
+  addRecentFolder,
+  clearRecentFolders,
+  clearRecents,
+  listRecentFolders,
+  listRecents,
+  renameRecent,
+} from './recents.ts'
 import {
   assertGranted,
   assertReadable,
   assertReadableDir,
+  assertWritable,
   canonicalPath,
   grantFile,
   grantRoot,
@@ -44,6 +53,7 @@ import {
 import { openLinkedMarkdown } from './links.ts'
 import { route } from './openWith.ts'
 import { showFileContextMenu } from './fileMenu.ts'
+import { showFolderSwitcherMenu } from './folderMenu.ts'
 import { startPathDrag, takeOwnDrag } from './dragOut.ts'
 import { exportPdf } from './printing.ts'
 import { clearVersions, listVersions, readVersion } from './versions.ts'
@@ -92,9 +102,16 @@ export function registerIpcHandlers(): void {
     writeTextFile(filePath, content, asObject(opts) as WriteFileOptions),
   )
   ipcMain.handle(IPC.fsStat, (_event, filePath: unknown) => statPath(filePath))
-  ipcMain.handle(IPC.fsRename, (_event, filePath: unknown, name: unknown) =>
-    renameFile(filePath, name),
-  )
+  ipcMain.handle(IPC.fsRename, async (_event, filePath: unknown, name: unknown) => {
+    // Recents hold canonical paths (/private/var, not /var), so the entry to
+    // move is found by the same resolution renameFile itself applies.
+    const from = await assertWritable(filePath)
+    const result = await renameFile(filePath, name)
+    // Recents follow the file rather than accumulating its old names.
+    if (result.path !== from) renameRecent(from, result.path)
+    return result
+  })
+  ipcMain.handle(IPC.fsCreateFile, (_event, opts: unknown) => createNamedFile(opts))
 
   // --- folder --------------------------------------------------------------
   ipcMain.handle(IPC.folderList, (_event, root: unknown) => listMarkdownTree(root))
@@ -136,6 +153,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.recentsList, () => listRecents())
   ipcMain.handle(IPC.recentsAdd, (_event, filePath: unknown) => addRecent(filePath))
   ipcMain.handle(IPC.recentsClear, () => clearRecents())
+  ipcMain.handle(IPC.recentsListFolders, () => listRecentFolders())
+  ipcMain.handle(IPC.recentsAddFolder, (_event, dirPath: unknown) => addRecentFolder(dirPath))
+  ipcMain.handle(IPC.recentsClearFolders, () => clearRecentFolders())
 
   // --- settings ------------------------------------------------------------
   ipcMain.handle(IPC.settingsGet, () => getSettings())
@@ -283,6 +303,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.menuFileContext, (event, target: unknown) =>
     showFileContextMenu(winOf(event), target),
   )
+  ipcMain.handle(IPC.menuFolderSwitcher, (event, opts: unknown) => {
+    const current = asObject(opts).current
+    return showFolderSwitcherMenu(winOf(event), typeof current === 'string' ? current : null)
+  })
 
   // --- versions ------------------------------------------------------------
   ipcMain.handle(IPC.versionsList, (_event, filePath: unknown) => listVersions(filePath))

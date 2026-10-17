@@ -36,6 +36,7 @@ const api: MarkdownApi = {
       ipcRenderer.invoke(IPC.fsWriteFile, filePath, content, opts ?? {}),
     stat: (filePath) => ipcRenderer.invoke(IPC.fsStat, filePath),
     rename: (filePath, name) => ipcRenderer.invoke(IPC.fsRename, filePath, name),
+    createFile: (opts) => ipcRenderer.invoke(IPC.fsCreateFile, opts),
   },
   folder: {
     list: (root) => ipcRenderer.invoke(IPC.folderList, root),
@@ -50,6 +51,9 @@ const api: MarkdownApi = {
     list: () => ipcRenderer.invoke(IPC.recentsList),
     add: (filePath) => ipcRenderer.invoke(IPC.recentsAdd, filePath),
     clear: () => ipcRenderer.invoke(IPC.recentsClear),
+    listFolders: () => ipcRenderer.invoke(IPC.recentsListFolders),
+    addFolder: (dirPath) => ipcRenderer.invoke(IPC.recentsAddFolder, dirPath),
+    clearFolders: () => ipcRenderer.invoke(IPC.recentsClearFolders),
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
@@ -87,6 +91,7 @@ const api: MarkdownApi = {
   },
   menu: {
     fileContext: (target) => ipcRenderer.invoke(IPC.menuFileContext, target),
+    folderSwitcher: (opts) => ipcRenderer.invoke(IPC.menuFolderSwitcher, opts ?? {}),
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke(IPC.shellOpenExternal, url),
@@ -99,6 +104,7 @@ const api: MarkdownApi = {
     folderTree: (cb) => subscribe(IPC.hostFolderTree, cb),
     closeRequested: (cb) => subscribe(IPC.hostCloseRequested, cb),
     fullScreenChanged: (cb) => subscribe(IPC.hostFullScreenChanged, cb),
+    recentFoldersChanged: (cb) => subscribe(IPC.hostRecentFoldersChanged, cb),
   },
 }
 

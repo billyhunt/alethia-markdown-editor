@@ -28,7 +28,7 @@ vi.mock('../../src/renderer/api.ts', () => ({
       saveAs: vi.fn(),
     },
     fs: { readFile: mocks.readFile, writeFile: vi.fn() },
-    recents: { add: mocks.recentsAdd },
+    recents: { add: mocks.recentsAdd, addFolder: vi.fn(), listFolders: vi.fn(async () => []) },
     document: { watch: mocks.documentWatch, unwatch: vi.fn() },
     folder: { list: mocks.folderList, watch: vi.fn() },
     window: {

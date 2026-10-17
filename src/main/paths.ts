@@ -170,6 +170,32 @@ export async function assertWritableSibling(source: string, destination: unknown
 }
 
 /**
+ * Write rules for a file that does not exist yet, decided WITHOUT granting
+ * it.
+ *
+ * Granting a candidate path first would be self-defeating: a symlink sitting
+ * where the new file should go resolves the grant onto whatever it points at,
+ * which is exactly the escape realpath membership exists to close. Authority
+ * comes from the parent directory's grant instead, and the caller creates the
+ * file exclusively so an entry that appears in between is never followed.
+ */
+export async function assertWritableNewFile(input: unknown): Promise<string> {
+  const target = validatePath(input)
+  const parentReal = await realResolve(path.dirname(target))
+  if (!(await isGranted(parentReal))) throw new PathPermissionError()
+
+  const real = path.join(parentReal, path.basename(target))
+  if (!isMarkdownPath(real)) {
+    throw new PathPermissionError('EPERM: refusing to write a non-markdown file')
+  }
+  const userData = await realResolve(app.getPath('userData'))
+  if (real === userData || real.startsWith(userData + path.sep)) {
+    throw new PathPermissionError('EPERM: refusing to write inside userData')
+  }
+  return real
+}
+
+/**
  * The path a write must actually go to: the resolved real path when the file
  * exists, so I/O lands on exactly what assertWritable approved rather than
  * re-following a link the check already resolved. A file that does not exist

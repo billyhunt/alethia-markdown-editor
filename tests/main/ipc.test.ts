@@ -17,10 +17,17 @@ const native = vi.hoisted(() => ({
   showItemInFolder: vi.fn(),
 }))
 vi.mock('electron', () => ({
-  app: { getPath: () => os.tmpdir(), addRecentDocument: vi.fn(), getVersion: () => 'test', getFileIcon: () => Promise.reject(new Error('no icon')) },
+  app: {
+    getPath: () => path.join(os.tmpdir(), 'alethia-ipc-userdata'),
+    addRecentDocument: vi.fn(),
+    clearRecentDocuments: vi.fn(),
+    getVersion: () => 'test',
+    getFileIcon: () => Promise.reject(new Error('no icon')),
+  },
   nativeImage: { createFromDataURL: () => ({}) },
   ipcMain: { handle: (name: string, handler: (...args: any[]) => any) => native.handlers.set(name, handler) },
   BrowserWindow: { fromWebContents: (sender: any) => native.windows.find(w => w.webContents === sender), getAllWindows: () => native.windows },
+  Menu: { buildFromTemplate: (template: unknown) => template, setApplicationMenu: vi.fn() },
   dialog: { showMessageBox: native.showMessageBox },
   shell: { showItemInFolder: native.showItemInFolder },
 }))
@@ -41,7 +48,7 @@ vi.mock('../../src/main/windows.ts', () => ({
   raise: native.raise,
 }))
 import { registerIpcHandlers } from '../../src/main/ipc.ts'
-import { assertReadable, assertReadableDir, grantFile } from '../../src/main/paths.ts'
+import { assertReadable, assertReadableDir, grantFile, grantRoot } from '../../src/main/paths.ts'
 import { getSettings, patchSettings } from '../../src/main/settings.ts'
 import { IPC } from '../../src/shared/ipc.ts'
 
@@ -60,9 +67,9 @@ beforeEach(async () => {
   native.route.mockClear()
   native.raise.mockClear()
   native.showing = null
-  native.windows = [{ id: 101, webContents: { id: 101 }, isDestroyed: () => false, isFullScreen: () => false, getNormalBounds: () => ({ width: 800, height: 600 }) }]
+  native.windows = [{ id: 101, webContents: { id: 101, send: vi.fn() }, isDestroyed: () => false, isFullScreen: () => false, getNormalBounds: () => ({ width: 800, height: 600 }) }]
   native.showMessageBox.mockResolvedValue({ response: 1 })
-  patchSettings({ recentFiles: [], windows: [] })
+  patchSettings({ recentFiles: [], recentFolders: [], windows: [] })
   registerIpcHandlers()
 })
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }) })
@@ -143,9 +150,11 @@ it('refuses to turn an ungranted recent into a grant', async () => {
   expect(getSettings().recentFiles).toEqual([])
   await expect(assertReadable(secret)).rejects.toThrow(/EPERM/)
 })
-it.each(['recentFiles', 'windows', 'windowBounds', 'theme'])('rejects renderer settings authority through %s', async key => {
+it.each(['recentFiles', 'recentFolders', 'windows', 'windowBounds', 'theme'])('rejects renderer settings authority through %s', async key => {
   const patches: Record<string, unknown> = {
     recentFiles: { recentFiles: [secret] },
+    // Every persisted recent folder is granted as a root on the next launch.
+    recentFolders: { recentFolders: ['/'] },
     windows: { windows: [{ file: secret, folder: root }] },
     windowBounds: { windowBounds: { width: 1e9, height: -5 } },
     theme: { theme: 'dark' },
@@ -223,4 +232,33 @@ it('still records a granted recent', async () => {
   grantFile(secret)
   await invoke(IPC.recentsAdd, secret)
   expect(getSettings().recentFiles).toEqual([secret])
+})
+
+it('refuses to record a folder that was never granted, so a recent cannot widen access', async () => {
+  await expect(invoke(IPC.recentsAddFolder, '/')).rejects.toThrow(/EPERM/)
+  await expect(invoke(IPC.recentsAddFolder, root)).rejects.toThrow(/EPERM/)
+  expect(getSettings().recentFolders).toEqual([])
+  await expect(assertReadableDir(root)).rejects.toThrow(/EPERM/)
+})
+it('records a folder main has already granted', async () => {
+  grantRoot(root)
+  await invoke(IPC.recentsAddFolder, root)
+  expect(getSettings().recentFolders).toEqual([root])
+})
+it('moves a recent along with a renamed file, matching it by canonical path', async () => {
+  // The renderer may name the file through a symlink; recents hold real paths.
+  const link = path.join(os.tmpdir(), `alethia-ipc-link-${path.basename(root)}`)
+  await fs.symlink(root, link)
+  try {
+    grantRoot(root)
+    const draft = path.join(root, 'Draft.md')
+    await fs.writeFile(draft, '# Draft')
+    patchSettings({ recentFiles: [draft, secret] })
+
+    const result = await invoke(IPC.fsRename, path.join(link, 'Draft.md'), 'Final')
+    expect(result.path).toBe(path.join(root, 'Final.md'))
+    expect(getSettings().recentFiles).toEqual([path.join(root, 'Final.md'), secret])
+  } finally {
+    await fs.rm(link, { force: true })
+  }
 })

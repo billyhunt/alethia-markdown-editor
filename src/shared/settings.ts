@@ -1,5 +1,10 @@
 export type ThemePreference = 'system' | 'light' | 'dark'
 
+/** Shared so the loader and the writer cannot disagree about the caps. */
+export const MAX_RECENTS = 20
+/** Short enough to stay a switcher rather than a history. */
+export const MAX_RECENT_FOLDERS = 10
+
 export interface WindowBounds {
   x?: number
   y?: number
@@ -24,6 +29,8 @@ export interface Settings {
   toolbarVisible: boolean
   autosave: boolean
   recentFiles: string[]
+  /** Folders opened as a workspace, newest first. The vault switcher. */
+  recentFolders: string[]
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -34,6 +41,7 @@ export const DEFAULT_SETTINGS: Settings = {
   toolbarVisible: true,
   autosave: true,
   recentFiles: [],
+  recentFolders: [],
 }
 
 export const EMPTY_SESSION: WindowSession = {
