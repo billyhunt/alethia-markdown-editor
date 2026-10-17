@@ -25,6 +25,32 @@ export class BulletWidget extends WidgetType {
   }
 }
 
+/**
+ * Pulls an ordered-list number left by its own width, so the number hangs in
+ * the gutter like a bullet and the text starts at the item's column. A
+ * zero-width widget rather than a style on the number itself: a search match
+ * over part of the number splits that span, and each piece would hang again.
+ */
+export class OrderedHangWidget extends WidgetType {
+  readonly chars: number
+
+  constructor(chars: number) {
+    super()
+    this.chars = chars
+  }
+
+  eq(other: OrderedHangWidget): boolean {
+    return other.chars === this.chars
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement('span')
+    span.className = 'cm-md-ol-hang'
+    span.style.setProperty('--md-ol-chars', String(this.chars))
+    return span
+  }
+}
+
 /** A clickable task-list checkbox that writes back into the document. */
 export class CheckboxWidget extends WidgetType {
   readonly checked: boolean
