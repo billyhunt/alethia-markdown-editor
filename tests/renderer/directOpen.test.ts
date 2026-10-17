@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   documentWatch: vi.fn(),
   folderList: vi.fn(),
   setDocument: vi.fn(),
-  refreshPreview: vi.fn(),
+  setFilePath: vi.fn(),
   revealDocument: vi.fn(),
   releaseDocument: vi.fn(),
   confirmSaveChanges: vi.fn(),
@@ -44,7 +44,7 @@ vi.mock('../../src/renderer/api.ts', () => ({
 vi.mock('../../src/renderer/editor/editorController.ts', () => ({
   editorController: {
     setDocument: mocks.setDocument,
-    refreshPreview: mocks.refreshPreview,
+    setFilePath: mocks.setFilePath,
     getText: mocks.getText,
   },
 }))
@@ -77,7 +77,7 @@ describe('document-first openPath', () => {
     expect(mocks.readFile).toHaveBeenCalledWith(PATH)
     expect(mocks.folderList).not.toHaveBeenCalled()
     expect(mocks.setDocument).toHaveBeenCalledWith('# Today')
-    expect(mocks.refreshPreview).toHaveBeenCalledOnce()
+    expect(mocks.setFilePath).toHaveBeenCalledWith(PATH)
     expect(mocks.documentWatch).toHaveBeenCalledWith(PATH)
     expect(useDocumentStore.getState().filePath).toBe(PATH)
     expect(useWorkspaceStore.getState().folderRoot).toBeNull()

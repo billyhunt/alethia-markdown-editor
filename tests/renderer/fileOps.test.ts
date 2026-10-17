@@ -4,23 +4,34 @@ const host = vi.hoisted(() => ({
   dialog: {
     confirmSaveChanges: vi.fn(), openFile: vi.fn(), saveAs: vi.fn(), showError: vi.fn(),
   },
-  fs: { readFile: vi.fn(), writeFile: vi.fn() },
+  fs: { readFile: vi.fn(), writeFile: vi.fn(), rename: vi.fn() },
   document: { watch: vi.fn(), unwatch: vi.fn() },
   recents: { add: vi.fn() },
   window: { revealDocument: vi.fn(async () => false), releaseDocument: vi.fn(async () => undefined) },
 }))
 vi.mock('../../src/renderer/api.ts', () => ({ api: host, unwrapIpcError: String }))
-const buffer = vi.hoisted(() => ({ text: '' }))
+const buffer = vi.hoisted(() => ({
+  text: '',
+  filePath: null as string | null,
+  pathWhenTextSet: undefined as string | null | undefined,
+  events: [] as string[],
+}))
 vi.mock('../../src/renderer/editor/editorController.ts', () => ({
   editorController: {
     getText: () => buffer.text,
-    setDocument: (text: string) => { buffer.text = text },
-    refreshPreview: vi.fn(),
+    setDocument: (text: string) => {
+      buffer.text = text
+      buffer.pathWhenTextSet = buffer.filePath
+    },
+    setFilePath: (filePath: string | null) => {
+      buffer.filePath = filePath
+      buffer.events.push('editor learns path')
+    },
   },
 }))
 
 import {
-  closeDocument, ensureClosable, forgetTrashedFile, openFileDialog, openPath, save,
+  closeDocument, ensureClosable, forgetTrashedFile, openFileDialog, openPath, renameFile, save, saveAs,
 } from '../../src/renderer/services/fileOps.ts'
 import { handleFileChange } from '../../src/renderer/services/externalChanges.ts'
 import { useDocumentStore as docs } from '../../src/renderer/state/documentStore.ts'
@@ -36,6 +47,58 @@ beforeEach(() => {
   workspace.setState({ folderRoot: '/test', notice: null })
   host.fs.readFile.mockResolvedValue({ content: '# Next\n', mtimeMs: 2, lineEnding: '\n' })
   host.dialog.confirmSaveChanges.mockResolvedValue('cancel')
+  buffer.events = []
+  host.document.watch.mockImplementation(async () => {
+    // Yield, as the real IPC round trip does: anything that should wait for
+    // main to know the document has to wait for this to settle.
+    await Promise.resolve()
+    buffer.events.push('main records document')
+  })
+})
+
+/**
+ * Main refuses a document's images unless it has recorded that document as
+ * open, and the image widget remembers a refusal as a failed image. So in
+ * every transition that gives the editor a new path, main has to hear about it
+ * first.
+ */
+describe('main learns the document before the editor can request its images', () => {
+  let lastPath: string | null
+  let unsubscribe: () => void
+  beforeEach(() => {
+    lastPath = docs.getState().filePath
+    unsubscribe = docs.subscribe((state) => {
+      if (state.filePath !== lastPath) {
+        lastPath = state.filePath
+        buffer.events.push('store publishes path')
+      }
+    })
+    return () => unsubscribe()
+  })
+
+  it('on open', async () => {
+    await openPath('/test/next.md')
+    expect(buffer.events.indexOf('main records document')).toBe(0)
+    expect(buffer.events).toContain('editor learns path')
+    expect(buffer.events).toContain('store publishes path')
+  })
+
+  it('on Save As', async () => {
+    host.dialog.saveAs.mockResolvedValue('/test/elsewhere.md')
+    host.fs.writeFile.mockResolvedValue({ ok: true, mtimeMs: 5 })
+    expect(await saveAs()).toBe(true)
+    expect(docs.getState().filePath).toBe('/test/elsewhere.md')
+    expect(buffer.events[0]).toBe('main records document')
+    expect(buffer.events).toContain('store publishes path')
+  })
+
+  it('on rename of the open file', async () => {
+    host.fs.rename.mockResolvedValue({ path: '/test/renamed.md' })
+    await renameFile(file, 'renamed.md')
+    expect(docs.getState().filePath).toBe('/test/renamed.md')
+    expect(buffer.events[0]).toBe('main records document')
+    expect(buffer.events).toContain('store publishes path')
+  })
 })
 
 describe('intentional deletion of the open file', () => {
@@ -52,6 +115,10 @@ describe('intentional deletion of the open file', () => {
     expect(host.dialog.confirmSaveChanges).not.toHaveBeenCalled()
     expect(docs.getState().filePath).toBe(next)
     expect(buffer.text).toBe('# Next\n')
+    // The editor builds image URLs from the path during setDocument, so the
+    // path has to be known first; otherwise the new note's images are briefly
+    // requested against the previous note's folder.
+    expect(buffer.pathWhenTextSet).toBe(next)
   })
 
   it('preserves edits made just before deletion, even before the dirty flag updates', async () => {

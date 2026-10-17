@@ -5,7 +5,6 @@ import path from 'node:path'
 import {
   assertReadable,
   assertReadableDir,
-  assertReadableImage,
   assertWritable,
   grantFile,
   grantRoot,
@@ -111,16 +110,6 @@ describe('assertReadable', () => {
     await fs.writeFile(sh, '#!/bin/sh')
     grantRoot(root)
     await expect(assertReadable(sh)).rejects.toThrow(/unsupported file type/)
-  })
-})
-
-describe('assertReadableImage', () => {
-  it('allows a granted local image but no other file type', async () => {
-    const image = path.join(root, 'diagram.png')
-    await fs.writeFile(image, 'not decoded in this test')
-    grantRoot(root)
-    await expect(assertReadableImage(image)).resolves.toBe(await fs.realpath(image))
-    await expect(assertReadableImage(granted)).rejects.toThrow(/unsupported image type/)
   })
 })
 

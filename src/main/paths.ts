@@ -2,7 +2,7 @@ import { realpathSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { app } from 'electron'
-import { isImagePath, isMarkdownPath, isReadablePath } from '../shared/markdown.ts'
+import { isMarkdownPath, isReadablePath } from '../shared/markdown.ts'
 
 /**
  * Main never trusts a renderer-supplied path on its own.
@@ -116,17 +116,6 @@ export async function assertReadable(input: unknown): Promise<string> {
   return real
 }
 
-/** Images follow the same grant boundary as text, with a smaller type allowlist. */
-export async function assertReadableImage(input: unknown): Promise<string> {
-  const target = validatePath(input)
-  const real = await realResolve(target)
-  if (!(await isGranted(real))) throw new PathPermissionError()
-  if (!isImagePath(real)) {
-    throw new PathPermissionError('EPERM: unsupported image type')
-  }
-  return real
-}
-
 export async function assertWritable(input: unknown): Promise<string> {
   const target = validatePath(input)
   const real = await realResolve(target)
@@ -142,6 +131,24 @@ export async function assertWritable(input: unknown): Promise<string> {
     throw new PathPermissionError('EPERM: refusing to write inside userData')
   }
   return real
+}
+
+/** Validate a prospective sibling destination using the normal write rules. */
+export async function assertWritableSibling(source: string, destination: unknown): Promise<string> {
+  const from = await assertWritable(source)
+  const target = validatePath(destination)
+  if (path.dirname(target) !== path.dirname(from)) {
+    throw new PathPermissionError('EINVAL: destination must be in the same folder')
+  }
+  const real = await realResolve(target)
+  if (!isMarkdownPath(real)) {
+    throw new PathPermissionError('EPERM: refusing to write a non-markdown file')
+  }
+  const userData = await realResolve(app.getPath('userData'))
+  if (real === userData || real.startsWith(userData + path.sep)) {
+    throw new PathPermissionError('EPERM: refusing to write inside userData')
+  }
+  return target
 }
 
 /** Directories are readable when granted as a root. */

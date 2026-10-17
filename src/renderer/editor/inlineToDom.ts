@@ -12,7 +12,11 @@ const TAGS: Record<string, string> = {
   Strikethrough: 'del',
 }
 
-const MARKS = new Set(['EmphasisMark', 'CodeMark', 'StrikethroughMark', 'LinkMark'])
+// URL and LinkTitle join the delimiters: for `[text](url "title")` and
+// `![alt](src)` alike, what a cell shows is the text, not the destination.
+// Without this an image in a cell rendered as its alt text run straight into
+// its path.
+const MARKS = new Set(['EmphasisMark', 'CodeMark', 'StrikethroughMark', 'LinkMark', 'URL', 'LinkTitle'])
 
 export function renderInlineMarkdown(source: string): DocumentFragment {
   const fragment = document.createDocumentFragment()

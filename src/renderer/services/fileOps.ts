@@ -29,13 +29,20 @@ export function hasUnsavedEdits(): boolean {
 
 async function adoptFile(filePath: string): Promise<void> {
   const { content, mtimeMs, lineEnding } = await api.fs.readFile(filePath)
+  // Main serves a document's images only while it has that document recorded
+  // as open in this window, and `document.watch` is what records it. So it
+  // goes before the editor learns the path: an image request that arrived
+  // first would be refused as "not open", and the widget remembers a refusal
+  // as a failed image.
+  await api.document.watch(filePath)
+  // Path next: the editor builds image URLs from it during setDocument, and
+  // the store effect that would correct it runs a tick later. Without this,
+  // opening B while A is open briefly requests B's images against A's folder.
+  editorController.setFilePath(filePath)
   editorController.setDocument(content)
   useDocumentStore.getState().load({ filePath, text: content, mtimeMs, lineEnding })
-  editorController.refreshPreview()
   await api.recents.add(filePath)
-  await api.document.watch(filePath)
   useWorkspaceStore.getState().setNotice(null)
-
 }
 
 export async function newDocument(): Promise<void> {
@@ -149,19 +156,62 @@ export async function saveAs(): Promise<boolean> {
   return writeTo(chosen, null)
 }
 
-async function writeTo(filePath: string, expectedMtimeMs: number | null): Promise<boolean> {
+interface ActiveWrite {
+  queued: boolean
+  promise: Promise<boolean>
+}
+
+const activeWrites = new Map<string, ActiveWrite>()
+
+function writeTo(filePath: string, expectedMtimeMs: number | null): Promise<boolean> {
+  const running = activeWrites.get(filePath)
+  if (running) {
+    running.queued = true
+    return running.promise
+  }
+
+  const active: ActiveWrite = { queued: false, promise: Promise.resolve(false) }
+  activeWrites.set(filePath, active)
+  active.promise = (async () => {
+    let result = false
+    do {
+      active.queued = false
+      const attemptedText = editorController.getText()
+      const current = useDocumentStore.getState()
+      const expected = current.filePath === filePath ? current.mtimeMs : expectedMtimeMs
+      result = await performWriteTo(filePath, expected)
+      if (!active.queued || editorController.getText() === attemptedText) return result
+    } while (useDocumentStore.getState().filePath === filePath)
+    return result
+  })().finally(() => {
+    if (activeWrites.get(filePath) === active) activeWrites.delete(filePath)
+  })
+  return active.promise
+}
+
+async function performWriteTo(filePath: string, expectedMtimeMs: number | null): Promise<boolean> {
   const text = editorController.getText()
-  const { lineEnding } = useDocumentStore.getState()
+  const before = useDocumentStore.getState()
+  const { lineEnding, savedText } = before
   try {
-    const result = await api.fs.writeFile(filePath, text, { expectedMtimeMs, lineEnding })
+    const result = await api.fs.writeFile(filePath, text, {
+      expectedMtimeMs,
+      expectedText: expectedMtimeMs == null ? undefined : savedText,
+      lineEnding,
+    })
     if (!result.ok) {
-      showConflictNotice(filePath, text)
+      showConflictNotice(filePath)
       return false
     }
-    useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs })
-    editorController.refreshPreview()
-    await api.recents.add(filePath)
+    // Watch first: for Save As this is what tells main which document the
+    // window shows, and the editor builds image URLs the moment the store
+    // publishes the new path. See adoptFile.
     await api.document.watch(filePath)
+    const current = useDocumentStore.getState()
+    if (current.filePath !== before.filePath || current.savedText !== before.savedText) return false
+    current.markSaved({ filePath, text, mtimeMs: result.mtimeMs })
+    current.setDirty(editorController.getText() !== text)
+    await api.recents.add(filePath)
     useWorkspaceStore.getState().setNotice(null)
     return true
   } catch (error) {
@@ -170,20 +220,14 @@ async function writeTo(filePath: string, expectedMtimeMs: number | null): Promis
   }
 }
 
-function showConflictNotice(filePath: string, text: string): void {
+function showConflictNotice(filePath: string): void {
   useWorkspaceStore.getState().setNotice({
     message: 'This file changed on disk since you loaded it.',
     actions: [
       {
         label: 'Overwrite',
         run: () => {
-          const ending = useDocumentStore.getState().lineEnding
-          void api.fs.writeFile(filePath, text, { force: true, lineEnding: ending }).then((result) => {
-            if (result.ok) {
-              useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs })
-            }
-            useWorkspaceStore.getState().setNotice(null)
-          })
+          void overwriteCurrentFile(filePath)
         },
       },
       {
@@ -194,6 +238,28 @@ function showConflictNotice(filePath: string, text: string): void {
       },
     ],
   })
+}
+
+/** Writes after the user explicitly chooses to replace the disk version. */
+export async function overwriteCurrentFile(filePath: string): Promise<void> {
+  const before = useDocumentStore.getState()
+  if (before.filePath !== filePath) return
+  const text = editorController.getText()
+  try {
+    const result = await api.fs.writeFile(filePath, text, {
+      force: true,
+      lineEnding: before.lineEnding,
+    })
+    if (!result.ok) return
+    const latest = useDocumentStore.getState()
+    if (latest.filePath === filePath && latest.savedText === before.savedText) {
+      latest.markSaved({ filePath, text, mtimeMs: result.mtimeMs })
+      latest.setDirty(editorController.getText() !== text)
+      useWorkspaceStore.getState().setNotice(null)
+    }
+  } catch (error) {
+    await api.dialog.showError({ title: 'Could not save file', message: unwrapIpcError(error) })
+  }
 }
 
 /** Re-lists the open workspace folder, e.g. after a rename or a trash. */
@@ -237,15 +303,24 @@ export function forgetTrashedFile(filePath: string): void {
 export async function renameFile(filePath: string, name: string): Promise<void> {
   const wasOpen = useDocumentStore.getState().filePath === filePath
   try {
-    const next = await api.fs.rename(filePath, name)
+    const result = await api.fs.rename(filePath, name)
+    const next = result.path
     if (wasOpen) {
       // Follow the file: the buffer is unchanged, only its identity moved.
-      const doc = useDocumentStore.getState()
-      doc.load({ filePath: next, text: doc.savedText, mtimeMs: doc.mtimeMs })
-      await api.recents.add(next)
+      // Same ordering rule as adoptFile: main learns the new path first.
       await api.document.watch(next)
+      const doc = useDocumentStore.getState()
+      doc.load({ filePath: next, text: doc.savedText, mtimeMs: doc.mtimeMs, lineEnding: doc.lineEnding })
+      doc.setDirty(editorController.getText() !== doc.savedText)
+      await api.recents.add(next)
     }
     await refreshFolder()
+    if (result.historyPath) {
+      useWorkspaceStore.getState().setNotice({
+        message: `Some version history could not be moved. Remaining history is associated with ${result.historyPath}.`,
+        actions: [{ label: 'Dismiss', run: () => useWorkspaceStore.getState().setNotice(null) }],
+      })
+    }
   } catch (error) {
     await api.dialog.showError({ title: 'Could not rename', message: unwrapIpcError(error) })
   }

@@ -114,6 +114,11 @@ export function noteFolder(win: BrowserWindow, folder: string | null): void {
   persistSessions()
 }
 
+/** The document a window currently shows, as it was opened; null for none. */
+export function documentShownBy(win: BrowserWindow): string | null {
+  return states.get(win.id)?.filePath ?? null
+}
+
 /** The window showing, or about to show, this file (by real path), if any. */
 export function windowShowing(realPath: string, except?: BrowserWindow): BrowserWindow | null {
   for (const win of BrowserWindow.getAllWindows()) {

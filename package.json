@@ -6,6 +6,9 @@
   "private": true,
   "version": "0.1.0-alpha.1",
   "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
   "main": "dist-electron/main.js",
   "scripts": {
     "postinstall": "node scripts/brand-dev-electron.mjs",
@@ -18,6 +21,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npm run build && playwright test",
     "package": "npm run build && electron-builder --mac --dir",
+    "verify:package": "node scripts/verify-package.mjs",
     "dist": "npm run build && electron-builder --mac dmg"
   },
   "dependencies": {
@@ -39,6 +43,7 @@
     "katex": "^0.18.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "turndown": "^7.2.4",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -47,6 +52,7 @@
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^6.1.0",
     "@vitest/coverage-v8": "^5.0.0",
     "electron": "^44.2.0",

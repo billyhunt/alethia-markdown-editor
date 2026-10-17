@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { app, BrowserWindow, nativeImage } from 'electron'
-import { getQuitting, persistSessions, raise, restoreWindows, setQuitting } from './windows.ts'
+import { documentShownBy, getQuitting, persistSessions, raise, restoreWindows, setQuitting } from './windows.ts'
 import { registerIpcHandlers } from './ipc.ts'
 import { hardenSession } from './security.ts'
 import { buildApplicationMenu } from './menu.ts'
@@ -9,11 +9,7 @@ import { grantPersistedRecents } from './recents.ts'
 import { applyTheme } from './theme.ts'
 import { enqueueArgv, enqueuePath, hasStarted, startUp } from './openWith.ts'
 import { closeAllWatchers } from './watcher.ts'
-import { registerImageProtocol, registerImageProtocolScheme } from './images.ts'
-
-// This is the only privileged registration and Electron requires it before
-// `ready`; the handler is installed once the default session exists.
-registerImageProtocolScheme()
+import { installImageProtocol, registerImageScheme, setOpenDocumentLookup } from './images.ts'
 
 // Finder delivers file opens before `ready`, while resolving each path is
 // asynchronous. Drain this serial queue before restoring any previous session
@@ -39,6 +35,10 @@ app.on('open-file', (event, filePath) => {
     // One bad path must not stall every Finder open after it.
     .catch((error: unknown) => console.error('open-file failed', error))
 })
+
+// Scheme privileges are only accepted before ready, so this cannot wait for
+// the whenReady block below.
+registerImageScheme()
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -70,7 +70,8 @@ if (!app.requestSingleInstanceLock()) {
     grantPersistedRecents()
     applyTheme(getSettings().theme)
     hardenSession()
-    registerImageProtocol()
+    setOpenDocumentLookup(documentShownBy)
+    installImageProtocol()
     registerIpcHandlers()
     buildApplicationMenu()
     await finderOpenQueue

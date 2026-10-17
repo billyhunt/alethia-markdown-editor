@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A superseded pull-request run is wasted work. Pushes to main are not
+# cancelled: the packaged build is the only check on a shippable bundle, and
+# cancelling it would leave intermediate main commits never verified.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Typecheck, lint and test
+    # The suite runs against jsdom, not a real Electron runtime, so Linux is
+    # enough for most of it and is faster and cheaper than a macOS runner.
+    # The parts that genuinely depend on macOS (the file watcher and path
+    # realpath handling) are re-run on macOS in the package job below.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # No step pushes, and PR-controlled install and build scripts run on
+          # this runner, so there is no reason to leave a token in .git/config.
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # The postinstall step patches the development Electron bundle and
+      # no-ops off macOS, so a plain install is safe here.
+      - run: npm ci
+
+      # `npm ci` catches dependency drift but tolerates a stale root version
+      # or a missing hasInstallScript, which is exactly what was wrong with
+      # this lock file before.
+      - name: Check the lock file is what npm would generate
+        run: |
+          npm install --package-lock-only --ignore-scripts
+          git diff --exit-code package-lock.json
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Summarise coverage
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e '
+              const t = require("./coverage/coverage-summary.json").total;
+              console.log("| Metric | % | Covered/Total |");
+              console.log("|---|---|---|");
+              for (const k of ["statements", "branches", "functions", "lines"]) {
+                console.log(`| ${k} | ${t[k].pct}% | ${t[k].covered}/${t[k].total} |`);
+              }
+            ' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No coverage summary produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage
+          path: coverage
+          retention-days: 14
+
+  package:
+    name: Packaged macOS build
+    # An Electron build can break while every unit test still passes, which is
+    # exactly the failure that should not be discovered on release day. The
+    # build is unsigned, so it needs no certificates.
+    needs: checks
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Deliberately no cache for the Electron download. @electron/get checks
+      # the zip against SHASUMS256.txt when it downloads, but not when it
+      # restores from cache, and a cache key with no secret in it can be
+      # planted by anything with push access. One ~100 MB download per lock
+      # change is cheaper than an unverified binary inside the .app.
+      - run: npm ci
+
+      # The only OS-coupled code in the repo: the chokidar watcher (FSEvents
+      # here, inotify on Linux) and the /var -> /private/var realpath handling,
+      # which never executes on the Linux job.
+      - name: Test on macOS
+        run: npm test
+
+      - name: Package
+        run: npm run package
+
+      # electron-builder can exit 0 and still leave an unshippable bundle, so
+      # inspect the output rather than trusting the exit code.
+      - name: Verify the app bundle
+        run: npm run verify:package

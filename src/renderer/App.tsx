@@ -27,6 +27,11 @@ export default function App() {
     editorController.setModes({ focus: focusMode, typewriter: typewriterMode })
   }, [focusMode, typewriterMode])
 
+  const filePath = useDocumentStore((state) => state.filePath)
+  useEffect(() => {
+    editorController.setFilePath(filePath)
+  }, [filePath])
+
   useEffect(() => {
     let timer: number | undefined
     return editorController.onDocChange((text) => {
@@ -41,9 +46,6 @@ export default function App() {
           chars: countChars(state),
         })
         useWorkspaceStore.getState().setOutline(extractOutline(state))
-        // Undoing back to the saved text should clear the dot, so compare
-        // content rather than tracking an edited flag.
-        useDocumentStore.getState().setDirty(text !== useDocumentStore.getState().savedText)
       }, 200)
     })
   }, [])

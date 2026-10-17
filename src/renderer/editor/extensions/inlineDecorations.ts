@@ -6,14 +6,19 @@ import {
   type ViewUpdate,
 } from '@codemirror/view'
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
-import { Annotation, type Range } from '@codemirror/state'
+import { type Range } from '@codemirror/state'
 import type { SyntaxNode } from '@lezer/common'
-import { isRelativeImageTarget, imageProtocolUrl } from '../../../shared/images.ts'
-import { useDocumentStore } from '../../state/documentStore.ts'
 import { isActive, lineIsActive } from './activeRanges.ts'
-import { BulletWidget, CheckboxWidget, CodeFenceWidget, HrWidget } from '../widgets/index.ts'
-import { ImageWidget } from '../widgets/ImageWidget.ts'
+import {
+  BulletWidget,
+  CheckboxWidget,
+  CodeFenceWidget,
+  HrWidget,
+  OrderedHangWidget,
+} from '../widgets/index.ts'
 import { MathWidget } from '../widgets/MathWidget.ts'
+import { ImageWidget, imageFailed } from '../widgets/ImageWidget.ts'
+import { documentPath } from './documentPath.ts'
 
 /**
  * The live-preview engine for everything that fits on one line.
@@ -58,8 +63,23 @@ function childrenNamed(node: SyntaxNode, name: string): SyntaxNode[] {
 const firstNamed = (node: SyntaxNode, name: string): SyntaxNode | null =>
   childrenNamed(node, name)[0] ?? null
 
-/** Rebuilds preview widgets when metadata such as the open file path changes. */
-export const previewContextChanged = Annotation.define<boolean>()
+/**
+ * A quote's own `>` marks. Only the first line's mark is a direct child: on
+ * later lines lezer puts it inside the paragraph or list it continues. A
+ * nested quote's marks are left to that quote, so none is hidden twice.
+ */
+function quoteMarksOf(quote: SyntaxNode): SyntaxNode[] {
+  const out: SyntaxNode[] = []
+  const walk = (node: SyntaxNode): void => {
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.name === 'QuoteMark') out.push(child)
+      // Code text is the fence's content, even when it is itself markdown.
+      else if (child.name !== 'Blockquote' && child.name !== 'CodeText') walk(child)
+    }
+  }
+  walk(quote)
+  return out
+}
 
 export function buildDecorations(view: EditorView): Built {
   const built: Built = { decorations: [], atomic: [] }
@@ -87,6 +107,9 @@ export function buildDecorations(view: EditorView): Built {
   // Lists are claimed innermost-first so a nested item's indentation is hidden
   // against its own content column rather than its ancestor's.
   const claimedLines = new Set<number>()
+  // How far each list line's hidden indentation reaches, so a quote marker
+  // already inside it is not hidden a second time.
+  const indentHiddenTo = new Map<number, number>()
 
   for (const { from, to } of view.visibleRanges) {
     // --- pass 1: list structure ------------------------------------------
@@ -123,6 +146,7 @@ export function buildDecorations(view: EditorView): Built {
         )
         // Leading indentation is layout, not content, so it is always hidden.
         hide(built, markerLine.from, mark.from)
+        indentHiddenTo.set(markerLine.from, mark.from)
       }
 
       // Continuation lines of this item align with its text.
@@ -131,7 +155,9 @@ export function buildDecorations(view: EditorView): Built {
         if (claimedLines.has(n)) continue
         claimedLines.add(n)
         const line = state.doc.line(n)
-        const leading = line.text.length - line.text.trimStart().length
+        // Inside a quote the line starts with its `>` markers, which count
+        // toward the item's content column like spaces do.
+        const leading = /^[ \t>]*/.exec(line.text)![0].length
         built.decorations.push(
           Decoration.line({
             class: 'cm-md-li',
@@ -139,6 +165,7 @@ export function buildDecorations(view: EditorView): Built {
           }).range(line.from),
         )
         hide(built, line.from, line.from + Math.min(contentCol, leading))
+        indentHiddenTo.set(line.from, line.from + Math.min(contentCol, leading))
       }
     }
 
@@ -258,19 +285,34 @@ export function buildDecorations(view: EditorView): Built {
             return true
 
           case 'Image': {
-            if (!active(node.from, node.to)) {
-              const url = firstNamed(node, 'URL')
-              const target = url ? state.doc.sliceString(url.from, url.to) : ''
-              const documentPath = useDocumentStore.getState().filePath
-              if (documentPath && isRelativeImageTarget(target)) {
-                replaceWith(
-                  built,
-                  node.from,
-                  node.to,
-                  Decoration.replace({ widget: new ImageWidget(imageProtocolUrl(documentPath, target)) }),
-                )
-              }
+            // The whole `![alt](src)` becomes the picture when the caret is
+            // away; on the line, the source shows and can be edited.
+            if (active(node.from, node.to)) return true
+            // Alt text may legally span lines. A replacement across a line
+            // break is forbidden from a ViewPlugin (CodeMirror throws), so
+            // such an image stays as source; it is rare and still editable.
+            if (state.doc.lineAt(node.from).number !== state.doc.lineAt(node.to).number) {
+              return true
             }
+            const url = firstNamed(node, 'URL')
+            if (!url) return true
+            const marks = childrenNamed(node, 'LinkMark')
+            // Alt text sits between `![` and `]`, the first two marks.
+            const alt =
+              marks.length >= 2 ? state.doc.sliceString(marks[0].to, marks[1].from) : ''
+            replaceWith(
+              built,
+              node.from,
+              node.to,
+              Decoration.replace({
+                widget: new ImageWidget(
+                  state.doc.sliceString(url.from, url.to),
+                  alt,
+                  state.facet(documentPath),
+                ),
+              }),
+            )
+            // Children are handled: do not also decorate the URL as a link.
             return false
           }
 
@@ -319,10 +361,11 @@ export function buildDecorations(view: EditorView): Built {
               built.decorations.push(lineDeco('cm-md-quote').range(state.doc.line(n).from))
             }
             // The `>` is never revealed: it is structure rather than text,
-            // and Enter and Backspace already maintain the quote via
-            // markdownKeymap.
-            for (const mark of childrenNamed(node, 'QuoteMark')) {
+            // and Enter and Backspace already maintain the quote via the
+            // list keymap in markdownLanguage.ts.
+            for (const mark of quoteMarksOf(node)) {
               const line = state.doc.lineAt(mark.from)
+              if ((indentHiddenTo.get(line.from) ?? -1) >= mark.to) continue
               hideMarkerAndSpace(mark.from, mark.to, line.to)
             }
             return true
@@ -345,7 +388,16 @@ export function buildDecorations(view: EditorView): Built {
                 Decoration.replace({ widget: new BulletWidget(depth) }),
               )
             } else {
-              built.decorations.push(markClass('cm-md-ol-mark').range(node.from, node.to))
+              // The number takes its following space with it, and a widget in
+              // front pulls both back by their width, so the text starts at the
+              // item's column, where its wrapped lines and nested items are.
+              const end = state.doc.sliceString(node.to, node.to + 1) === ' ' ? node.to + 1 : node.to
+              built.decorations.push(
+                Decoration.widget({ widget: new OrderedHangWidget(end - node.from), side: -1 }).range(
+                  node.from,
+                ),
+                markClass('cm-md-ol-mark').range(node.from, end),
+              )
             }
             return true
           }
@@ -393,15 +445,20 @@ export const inlineDecorations = ViewPlugin.fromClass(
       // The tree check matters: lezer parses large documents incrementally in
       // idle time, and without it the bottom of a long file stays raw.
       const treeChanged = syntaxTree(update.state) !== syntaxTree(update.startState)
-      const contextChanged = update.transactions.some(
-        (transaction) => transaction.annotation(previewContextChanged) === true,
-      )
+      // The path arrives after the text for a new note (after Save As),
+      // and every image widget embeds it, so they must be rebuilt.
+      const pathChanged =
+        update.state.facet(documentPath) !== update.startState.facet(documentPath)
+      // An image that failed to load asks for a redraw so its widget can
+      // become a placeholder; nothing else about the state has changed.
+      const imageChanged = update.transactions.some((tr) => tr.annotation(imageFailed) !== undefined)
       if (
         update.docChanged ||
         update.selectionSet ||
         update.viewportChanged ||
         treeChanged ||
-        contextChanged
+        pathChanged ||
+        imageChanged
       ) {
         const built = buildDecorations(update.view)
         this.decorations = Decoration.set(built.decorations, true)

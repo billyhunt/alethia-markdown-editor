@@ -4,6 +4,8 @@ import { defineConfig, type Plugin } from 'vite'
 
 const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+  // alethia-image: is the scheme main serves document images through; see
+  // src/main/images.ts for what it will and will not serve.
   "img-src 'self' data: alethia-image:; font-src 'self' data:; connect-src 'none'"
 
 // Production-only CSP. Dev must stay open for Vite's HMR client and the

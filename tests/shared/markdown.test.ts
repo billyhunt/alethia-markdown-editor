@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isImagePath, isMarkdownPath, isReadablePath, IGNORED_DIR_NAMES } from '../../src/shared/markdown.ts'
+import { isMarkdownPath, isReadablePath, IGNORED_DIR_NAMES } from '../../src/shared/markdown.ts'
 
 describe('isMarkdownPath', () => {
   it.each(['/a/b/notes.md', '/a/notes.markdown', '/a/notes.mdown', '/a/notes.mkd'])(
@@ -34,17 +34,6 @@ describe('isReadablePath', () => {
 
   it('still rejects executables', () => {
     expect(isReadablePath('/a/run.sh')).toBe(false)
-  })
-})
-
-describe('isImagePath', () => {
-  it.each(['/a/diagram.png', '/a/diagram.JPEG', '/a/animation.gif', '/a/photo.webp'])(
-    'accepts %s',
-    (p) => expect(isImagePath(p)).toBe(true),
-  )
-
-  it.each(['/a/notes.md', '/a/vector.svg', '/a/image.png.txt'])('rejects %s', (p) => {
-    expect(isImagePath(p)).toBe(false)
   })
 })
 
