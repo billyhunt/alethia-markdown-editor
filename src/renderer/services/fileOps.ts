@@ -1,9 +1,9 @@
 import { api, unwrapIpcError } from '../api.ts'
 import { fileNameForDocument } from '../../shared/titles.ts'
-import type { CreateFileResult } from '../../shared/api'
 import { editorController } from '../editor/editorController.ts'
 import { documentName, useDocumentStore } from '../state/documentStore.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
+import type { CreateFileResult, OpenPathEvent, RenameFileResult } from '../../shared/api.ts'
 
 /**
  * Every destructive transition funnels through here. Main never caches the
@@ -20,27 +20,36 @@ export async function ensureClosable(): Promise<boolean> {
   return save()
 }
 
+/**
+ * True when the buffer differs from what was loaded or last saved. Read from
+ * the editor itself, because the dirty flag in the store is debounced.
+ */
+export function hasUnsavedEdits(): boolean {
+  return editorController.getText() !== useDocumentStore.getState().savedText
+}
+
 async function adoptFile(filePath: string): Promise<void> {
   const { content, mtimeMs, lineEnding } = await api.fs.readFile(filePath)
+  // Main serves a document's images only while it has that document recorded
+  // as open in this window, and `document.watch` is what records it. So it
+  // goes before the editor learns the path: an image request that arrived
+  // first would be refused as "not open", and the widget remembers a refusal
+  // as a failed image.
+  const documentId = await api.document.watch(filePath)
   // Re-reading the same file is a reload, not a different document, so it
   // keeps following its title. Opening a different one starts fresh.
   const previous = useDocumentStore.getState()
   const stillOurs = previous.filePath === filePath && previous.namedByTitle
+  // Path next: the editor builds image URLs from it during setDocument, and
+  // the store effect that would correct it runs a tick later. Without this,
+  // opening B while A is open briefly requests B's images against A's folder.
+  editorController.setFilePath(filePath)
   editorController.setDocument(content)
   useDocumentStore
     .getState()
-    .load({ filePath, text: content, mtimeMs, lineEnding, namedByTitle: stillOurs })
+    .load({ filePath, documentId, text: content, mtimeMs, lineEnding, namedByTitle: stillOurs })
   await api.recents.add(filePath)
-  await api.document.watch(filePath)
   useWorkspaceStore.getState().setNotice(null)
-
-  // With no workspace yet, take the file's own folder. Otherwise opening a
-  // note from Finder lands on a sidebar telling you to open a folder, which
-  // reads as the app refusing to work until you do something.
-  if (!useWorkspaceStore.getState().folderRoot) {
-    const parent = filePath.slice(0, filePath.lastIndexOf('/'))
-    if (parent) await adoptFolder(parent).catch(() => undefined)
-  }
 }
 
 export async function newDocument(): Promise<void> {
@@ -51,18 +60,75 @@ export async function newDocument(): Promise<void> {
   useWorkspaceStore.getState().setNotice(null)
 }
 
-export async function openPath(filePath: string): Promise<void> {
-  if (!(await ensureClosable())) return
+interface OpenPathOptions {
+  /** A file chosen directly should take the whole window unless a workspace is already open. */
+  preferDocument?: boolean
+  /**
+   * Main already chose this window for the file (Finder, argv, a second
+   * launch), having checked every other window first.
+   */
+  routed?: boolean
+}
+
+export async function openPath(
+  filePath: string,
+  { preferDocument = false, routed = false }: OpenPathOptions = {},
+): Promise<void> {
+  // One document, one window: two editors on the same file would autosave
+  // over each other. Checked before the save prompt, which would otherwise
+  // ask about this window's document for nothing. When main finds no other
+  // window it also claims the file for this one, so a second window asked at
+  // the same moment is sent here instead of opening its own copy.
+  let claimed = false
+  if (!routed) {
+    if (await api.window.revealDocument(filePath).catch(() => false)) return
+    claimed = true
+  }
   try {
-    await adoptFile(filePath)
-  } catch (error) {
-    await api.dialog.showError({ title: 'Could not open file', message: unwrapIpcError(error) })
+    if (!(await ensureClosable())) return
+    try {
+      await adoptFile(filePath)
+      if (preferDocument && !useWorkspaceStore.getState().folderRoot) {
+        // This is transient; a direct-open must not overwrite the user's global
+        // sidebar preference, and the toggle remains one click away.
+        useWorkspaceStore.getState().setSidebarVisible(false)
+      }
+    } catch (error) {
+      await api.dialog.showError({ title: 'Could not open file', message: unwrapIpcError(error) })
+    }
+  } finally {
+    // Whether it opened, failed or was cancelled at the save prompt.
+    if (claimed) await api.window.releaseDocument(filePath).catch(() => undefined)
+  }
+}
+
+/**
+ * Handles a file or folder main routed to this window (Finder, argv, a second
+ * launch). Main chose this window because it looked empty; if the user has
+ * typed into it since main last heard, the file is passed back to be opened
+ * elsewhere, so it never costs them a save prompt or the text they were
+ * writing.
+ */
+export async function openRouted(event: OpenPathEvent): Promise<void> {
+  if (event.kind === 'file' && hasUnsavedEdits()) {
+    try {
+      await api.window.rerouteOpen(event.path)
+    } catch (error) {
+      await api.dialog.showError({ title: 'Could not open file', message: unwrapIpcError(error) })
+    }
+    return
+  }
+  try {
+    if (event.kind === 'dir') await adoptFolder(event.path)
+    else await openPath(event.path, { preferDocument: true, routed: true })
+  } finally {
+    await api.window.settleOpen()
   }
 }
 
 export async function openFileDialog(): Promise<void> {
   const chosen = await api.dialog.openFile()
-  if (chosen) await openPath(chosen)
+  if (chosen) await openPath(chosen, { preferDocument: true })
 }
 
 export async function openFolderDialog(): Promise<void> {
@@ -111,6 +177,9 @@ export async function switchFolder(): Promise<void> {
 }
 
 export async function save(): Promise<boolean> {
+  // An automatic rename moves the file out from under any save aimed at its
+  // old name, so a save waits for one in flight and then reads the path.
+  if (renaming) await renaming
   const { filePath, mtimeMs } = useDocumentStore.getState()
   if (!filePath) return saveAs()
   return writeTo(filePath, mtimeMs)
@@ -123,14 +192,34 @@ export async function saveAs(): Promise<boolean> {
     defaultDir: useWorkspaceStore.getState().folderRoot,
   })
   if (!chosen) return false
-  // Naming it by hand ends the automatic naming: from here the file is the
-  // user's to call whatever they like.
-  return writeTo(chosen, null, false)
+  // A brand new path has nothing to conflict with. Naming it by hand also
+  // ends the automatic naming: from here the file is the user's to call
+  // whatever they like.
+  return writeTo(chosen, null, true)
 }
 
-/** Consecutive failures to file a new document, so it can say so once. */
-let autoFileFailures = 0
-const FAILURES_BEFORE_NOTICE = 2
+/**
+ * Failures to file the current untitled buffer, counted per document so the
+ * count of one buffer is never held against the next.
+ */
+let autoFileFailure: { revision: number; count: number } | null = null
+/** Consecutive failed attempts, after which only a further edit tries again. */
+const MAX_AUTO_FILE_ATTEMPTS = 3
+
+/**
+ * True while a failed attempt to file the open buffer is worth repeating
+ * without waiting for another keystroke: the disk may only have been briefly
+ * full or busy, and the user may be done typing.
+ */
+export function autoFileRetryable(): boolean {
+  const { revision, filePath } = useDocumentStore.getState()
+  return (
+    filePath === null &&
+    autoFileFailure !== null &&
+    autoFileFailure.revision === revision &&
+    autoFileFailure.count < MAX_AUTO_FILE_ATTEMPTS
+  )
+}
 
 /**
  * Gives an untitled buffer a file of its own, named after its title, with no
@@ -142,7 +231,8 @@ const FAILURES_BEFORE_NOTICE = 2
  * following the title (see syncAutoName).
  *
  * Returns false when there is no title yet, which just means the next idle
- * pause tries again.
+ * pause tries again, or when the file could not be created: the user is told
+ * and autoFileRetryable says whether to try again by itself.
  */
 export async function saveNewByTitle(): Promise<boolean> {
   const { filePath, autoNameable, lineEnding, revision } = useDocumentStore.getState()
@@ -154,7 +244,8 @@ export async function saveNewByTitle(): Promise<boolean> {
   let created: CreateFileResult
   try {
     // The text goes in as the file is created, so a failure cannot leave an
-    // empty file behind and a retry cannot leave a numbered trail of them.
+    // empty file behind (main removes what a failed write started) and a
+    // retry cannot leave a numbered trail of them.
     created = await api.fs.createFile({
       dir: useWorkspaceStore.getState().folderRoot,
       name,
@@ -163,31 +254,42 @@ export async function saveNewByTitle(): Promise<boolean> {
     })
   } catch {
     // Saving on the user's behalf must never interrupt them with a dialog,
-    // but it must not fail silently forever either: a folder that cannot be
-    // written would otherwise leave someone typing into a document that is
-    // never saved and never says so.
-    autoFileFailures += 1
-    if (autoFileFailures === FAILURES_BEFORE_NOTICE) {
-      useWorkspaceStore.getState().setNotice({
-        message: 'This document could not be saved automatically. Use Save As to choose a place.',
-        actions: [
-          { label: 'Save As', run: () => { void saveAs() } },
-          { label: 'Dismiss', run: () => useWorkspaceStore.getState().setNotice(null) },
-        ],
-      })
-    }
+    // but it must not fail silently either: a folder that cannot be written
+    // would otherwise leave someone typing into a document that is never
+    // saved and never says so.
+    const count = autoFileFailure?.revision === revision ? autoFileFailure.count + 1 : 1
+    autoFileFailure = { revision, count }
+    useWorkspaceStore.getState().setNotice({
+      message: 'This document could not be saved automatically. Use Save As to choose a place.',
+      actions: [
+        { label: 'Save As', run: () => { void saveAs() } },
+        { label: 'Dismiss', run: () => useWorkspaceStore.getState().setNotice(null) },
+      ],
+    })
     return false
   }
-  autoFileFailures = 0
-  await refreshFolder()
+  autoFileFailure = null
 
-  const doc = useDocumentStore.getState()
-  if (doc.revision !== revision || doc.filePath !== null) {
-    // Something else took the editor while the file was being written. The
-    // file holds the text it was created from, so nothing is lost -- but
-    // this buffer is no longer that document and must not claim its path.
+  const claimable = (): boolean => {
+    const doc = useDocumentStore.getState()
+    return doc.revision === revision && doc.filePath === null
+  }
+  // Something else may take the editor while the file is being written. The
+  // file holds the text it was created from, so nothing is lost -- but then
+  // this buffer is no longer that document and must not claim its path.
+  if (!claimable()) {
+    await refreshFolder()
     return false
   }
+  // Main learns which document the window shows before the editor learns the
+  // path; see adoptFile. A failed watch must not strand a file that now
+  // exists: with the path unpublished, the next pass would create another.
+  const documentId = await api.document.watch(created.path).catch(() => null)
+  if (!claimable()) {
+    await refreshFolder()
+    return false
+  }
+  const doc = useDocumentStore.getState()
   doc.markSaved({
     filePath: created.path,
     text,
@@ -198,13 +300,42 @@ export async function saveNewByTitle(): Promise<boolean> {
     // make the document try to rename itself forever.
     autoNameBase: name,
   })
+  useDocumentStore.setState({ documentId })
   // Typing during the write leaves the buffer ahead of what was saved.
   doc.setDirty(editorController.getText() !== text)
-  await api.recents.add(created.path)
-  await api.document.watch(created.path)
   useWorkspaceStore.getState().setNotice(null)
+  await api.recents.add(created.path)
+  await refreshFolder()
   return true
 }
+
+/**
+ * The name the title currently asks for, or null when the file already has it
+ * (or has stopped following its title, or the title has gone away).
+ *
+ * Compared against the name the title last produced, not the name on disk:
+ * a numbered file (Notes 2.md) would never match its own title and would
+ * ask for the taken name on every save, then take it the moment it was
+ * freed -- from the user's side, the file vanishing and reappearing under
+ * a name they never chose.
+ */
+function wantedAutoName(): string | null {
+  const { namedByTitle, filePath, autoNameBase } = useDocumentStore.getState()
+  if (!namedByTitle || !filePath) return null
+  const wanted = fileNameForDocument(editorController.getText())
+  if (!wanted || wanted === autoNameBase || wanted === documentName(filePath)) return null
+  return wanted
+}
+
+/**
+ * Whether the title and the file name have drifted apart. Independent of the
+ * dirty flag on purpose: a save can land while a rename is in flight and
+ * clear it, and a title typed meanwhile still has to be followed.
+ */
+export const autoNamePending = (): boolean => wantedAutoName() !== null
+
+/** The automatic rename in flight, if any. Never rejects. */
+let renaming: Promise<void> | null = null
 
 /**
  * Keeps an automatically named file's name in step with its title, so a
@@ -212,66 +343,146 @@ export async function saveNewByTitle(): Promise<boolean> {
  *
  * Best effort by design: a name already taken, or any other failure, simply
  * leaves the current name in place.
+ *
+ * Renames are serialised, and a save waits for the one in flight (see save):
+ * a save aimed at the name being renamed away would be refused as stale, or
+ * worse, recreate it.
  */
-export async function syncAutoName(): Promise<void> {
-  const { namedByTitle, filePath, autoNameBase, revision } = useDocumentStore.getState()
-  if (!namedByTitle || !filePath) return
-  const wanted = fileNameForDocument(editorController.getText())
-  // Compared against the name the title last produced, not the name on disk:
-  // a numbered file (Notes 2.md) would never match its own title and would
-  // ask for the taken name on every save, then take it the moment it was
-  // freed -- from the user's side, the file vanishing and reappearing under
-  // a name they never chose.
-  if (!wanted || wanted === autoNameBase || wanted === documentName(filePath)) return
+export function syncAutoName(): Promise<void> {
+  const turn = (renaming ?? Promise.resolve()).then(renameToTitle)
+  renaming = turn
+  void turn.then(() => {
+    if (renaming === turn) renaming = null
+  })
+  return turn
+}
 
+async function renameToTitle(): Promise<void> {
+  const start = useDocumentStore.getState()
+  if (!start.namedByTitle || !start.filePath) return
+  // A write in flight on this path goes first; so does the follow-up write it
+  // may have coalesced, which would otherwise be aimed at the old name.
+  await activeWrites.get(start.filePath)?.promise
+
+  const { filePath, revision } = useDocumentStore.getState()
+  const wanted = wantedAutoName()
+  if (!wanted || !filePath) return
+
+  let result: RenameFileResult
   try {
-    const next = await api.fs.rename(filePath, wanted)
-    const doc = useDocumentStore.getState()
-    // The document may have been closed or replaced while the rename was in
-    // flight. The file on disk followed its title either way; the editor is
-    // simply no longer showing it.
-    if (doc.revision !== revision || doc.filePath !== filePath) {
-      await refreshFolder()
-      return
-    }
-    // Only the identity moved: the buffer, its dirty flag and its baseline
-    // are unchanged, and the save that follows writes to the new path.
-    doc.setPath(next, { namedByTitle: true, autoNameBase: wanted })
-    await api.recents.add(next)
-    await api.document.watch(next)
-    await refreshFolder()
+    result = await api.fs.rename(filePath, wanted)
   } catch {
     // The name is taken, or the move was refused. Record what the title
     // asked for anyway: retrying it every two seconds would achieve nothing
     // except to claim the name behind the user's back if it ever came free.
     const doc = useDocumentStore.getState()
     if (doc.revision === revision && doc.filePath === filePath) doc.setAutoNameBase(wanted)
+    return
   }
+
+  // Main learns the new path before the editor does; see adoptFile. If this
+  // fails the file has moved all the same, so the path must still follow it.
+  const documentId = await api.document.watch(result.path).catch(() => null)
+  const doc = useDocumentStore.getState()
+  // The document may have been closed or replaced while the rename was in
+  // flight. The file on disk followed its title either way; the editor is
+  // simply no longer showing it.
+  if (doc.revision !== revision || doc.filePath !== filePath) {
+    await refreshFolder()
+    return
+  }
+  // Only the identity moved: the buffer, its dirty flag and its baseline
+  // are unchanged, and the save that follows writes to the new path.
+  doc.setPath(result.path, { namedByTitle: true, autoNameBase: wanted, documentId })
+  await api.recents.add(result.path).catch(() => undefined)
+  await refreshFolder()
+  noticeIfHistoryStranded(result)
 }
 
-async function writeTo(
+function noticeIfHistoryStranded(result: RenameFileResult): void {
+  if (!result.historyPath) return
+  useWorkspaceStore.getState().setNotice({
+    message: `Some version history could not be moved. Remaining history is associated with ${result.historyPath}.`,
+    actions: [{ label: 'Dismiss', run: () => useWorkspaceStore.getState().setNotice(null) }],
+  })
+}
+
+interface ActiveWrite {
+  queued: boolean
+  /** Some request joined this write on behalf of a user-chosen name. */
+  endsAutoNaming: boolean
+  promise: Promise<boolean>
+}
+
+const activeWrites = new Map<string, ActiveWrite>()
+
+function writeTo(
   filePath: string,
   expectedMtimeMs: number | null,
-  namedByTitle?: boolean,
+  endsAutoNaming = false,
+): Promise<boolean> {
+  const running = activeWrites.get(filePath)
+  if (running) {
+    running.queued = true
+    running.endsAutoNaming ||= endsAutoNaming
+    return running.promise
+  }
+
+  const active: ActiveWrite = { queued: false, endsAutoNaming, promise: Promise.resolve(false) }
+  activeWrites.set(filePath, active)
+  active.promise = (async () => {
+    let result = false
+    do {
+      active.queued = false
+      const attemptedText = editorController.getText()
+      const current = useDocumentStore.getState()
+      const expected = current.filePath === filePath ? current.mtimeMs : expectedMtimeMs
+      result = await performWriteTo(filePath, expected, active.endsAutoNaming)
+      if (!active.queued || editorController.getText() === attemptedText) return result
+    } while (useDocumentStore.getState().filePath === filePath)
+    return result
+  })().finally(() => {
+    if (activeWrites.get(filePath) === active) activeWrites.delete(filePath)
+  })
+  return active.promise
+}
+
+async function performWriteTo(
+  filePath: string,
+  expectedMtimeMs: number | null,
+  endsAutoNaming: boolean,
 ): Promise<boolean> {
   const text = editorController.getText()
-  const { lineEnding, revision } = useDocumentStore.getState()
+  const before = useDocumentStore.getState()
+  const { lineEnding, savedText } = before
   try {
-    const result = await api.fs.writeFile(filePath, text, { expectedMtimeMs, lineEnding })
+    const result = await api.fs.writeFile(filePath, text, {
+      expectedMtimeMs,
+      expectedText: expectedMtimeMs == null ? undefined : savedText,
+      lineEnding,
+    })
     if (!result.ok) {
-      showConflictNotice(filePath, text)
+      showConflictNotice(filePath)
       return false
     }
-    const doc = useDocumentStore.getState()
-    // The write succeeded, but if the editor moved on to another document
-    // while it was in flight, marking that one saved would give it this
-    // file's path and hide its unsaved state.
-    if (doc.revision !== revision) return true
-    doc.markSaved({ filePath, text, mtimeMs: result.mtimeMs, namedByTitle })
-    // Typing during the write leaves the buffer ahead of what was saved.
-    doc.setDirty(editorController.getText() !== text)
+    // Watch first: for Save As this is what tells main which document the
+    // window shows, and the editor builds image URLs the moment the store
+    // publishes the new path. See adoptFile.
+    const documentId = await api.document.watch(filePath)
+    const current = useDocumentStore.getState()
+    if (current.filePath !== before.filePath || current.savedText !== before.savedText) return false
+    current.markSaved({
+      filePath,
+      text,
+      mtimeMs: result.mtimeMs,
+      // Left alone by a plain save, so it does not change who names the file.
+      namedByTitle: endsAutoNaming ? false : undefined,
+    })
+    // markSaved dropped the id if the path changed (Save As); main has just
+    // named the document at its new path, and relative links need that id.
+    useDocumentStore.setState({ documentId })
+    current.setDirty(editorController.getText() !== text)
     await api.recents.add(filePath)
-    await api.document.watch(filePath)
     useWorkspaceStore.getState().setNotice(null)
     return true
   } catch (error) {
@@ -280,20 +491,14 @@ async function writeTo(
   }
 }
 
-function showConflictNotice(filePath: string, text: string): void {
+function showConflictNotice(filePath: string): void {
   useWorkspaceStore.getState().setNotice({
     message: 'This file changed on disk since you loaded it.',
     actions: [
       {
         label: 'Overwrite',
         run: () => {
-          const ending = useDocumentStore.getState().lineEnding
-          void api.fs.writeFile(filePath, text, { force: true, lineEnding: ending }).then((result) => {
-            if (result.ok) {
-              useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs })
-            }
-            useWorkspaceStore.getState().setNotice(null)
-          })
+          void overwriteCurrentFile(filePath)
         },
       },
       {
@@ -304,6 +509,28 @@ function showConflictNotice(filePath: string, text: string): void {
       },
     ],
   })
+}
+
+/** Writes after the user explicitly chooses to replace the disk version. */
+export async function overwriteCurrentFile(filePath: string): Promise<void> {
+  const before = useDocumentStore.getState()
+  if (before.filePath !== filePath) return
+  const text = editorController.getText()
+  try {
+    const result = await api.fs.writeFile(filePath, text, {
+      force: true,
+      lineEnding: before.lineEnding,
+    })
+    if (!result.ok) return
+    const latest = useDocumentStore.getState()
+    if (latest.filePath === filePath && latest.savedText === before.savedText) {
+      latest.markSaved({ filePath, text, mtimeMs: result.mtimeMs })
+      latest.setDirty(editorController.getText() !== text)
+      useWorkspaceStore.getState().setNotice(null)
+    }
+  } catch (error) {
+    await api.dialog.showError({ title: 'Could not save file', message: unwrapIpcError(error) })
+  }
 }
 
 /** Re-lists the open workspace folder, e.g. after a rename or a trash. */
@@ -329,17 +556,16 @@ export function forgetTrashedFile(filePath: string): void {
   const keepEdits = text.length > 0 && text !== doc.savedText
   if (!keepEdits) editorController.setDocument('')
   // An untitled buffer's baseline is empty, so undoing an edit cannot mark
-  // retained text as saved when its file no longer exists. These edits are
-  // never filed automatically: re-creating what was just sent to the Trash,
-  // under nearly the same name, is the opposite of what was asked for.
+  // retained text as saved when its file no longer exists.
+  // These edits are never filed automatically: re-creating what was just sent
+  // to the Trash, under nearly the same name, is the opposite of what was
+  // asked for. An empty buffer left behind is just a new document, and
+  // writing in it should file itself like any other.
   doc.load({
     filePath: null,
     text: '',
     mtimeMs: null,
     lineEnding: doc.lineEnding,
-    // Only the rescued edits are ineligible. An empty buffer left behind by
-    // trashing a file is just a new document, and writing in it should file
-    // itself like any other.
     autoNameable: !keepEdits,
   })
   doc.setDirty(keepEdits)
@@ -356,17 +582,25 @@ export function forgetTrashedFile(filePath: string): void {
 }
 
 export async function renameFile(filePath: string, name: string): Promise<void> {
-  const wasOpen = useDocumentStore.getState().filePath === filePath
+  const startingDocument = useDocumentStore.getState()
+  const wasOpen = startingDocument.filePath === filePath
   try {
-    const next = await api.fs.rename(filePath, name)
+    const result = await api.fs.rename(filePath, name)
+    const next = result.path
     if (wasOpen) {
       // Follow the file: the buffer is unchanged, only its identity moved.
-      // A hand-picked name also ends automatic naming.
-      useDocumentStore.getState().setPath(next, { namedByTitle: false })
+      // Same ordering rule as adoptFile: main learns the new path first.
+      const documentId = await api.document.watch(next)
+      const doc = useDocumentStore.getState()
+      // Another document may have taken over the window while this ran.
+      if (doc.revision === startingDocument.revision && doc.filePath === filePath) {
+        doc.load({ filePath: next, documentId, text: doc.savedText, mtimeMs: doc.mtimeMs, lineEnding: doc.lineEnding })
+        doc.setDirty(editorController.getText() !== doc.savedText)
+      }
       await api.recents.add(next)
-      await api.document.watch(next)
     }
     await refreshFolder()
+    noticeIfHistoryStranded(result)
   } catch (error) {
     await api.dialog.showError({ title: 'Could not rename', message: unwrapIpcError(error) })
   }

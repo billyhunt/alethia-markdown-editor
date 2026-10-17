@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ops = vi.hoisted(() => ({
+  autoFileRetryable: vi.fn(() => false),
+  autoNamePending: vi.fn(() => false),
   save: vi.fn(async () => true),
   saveNewByTitle: vi.fn(async () => true),
   syncAutoName: vi.fn(async () => undefined),
@@ -18,8 +20,10 @@ vi.mock('react', async (importOriginal) => ({
 }))
 
 const listeners = vi.hoisted(() => new Set<(text: string) => void>())
+const buffer = vi.hoisted(() => ({ text: '' }))
 vi.mock('../../src/renderer/editor/editorController.ts', () => ({
   editorController: {
+    getText: () => buffer.text,
     onDocChange: (listener: (text: string) => void) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -47,12 +51,16 @@ function startAutosave(): void {
 }
 
 const type = (text = '# Draft\n') => {
+  buffer.text = text
   for (const listener of listeners) listener(text)
 }
 
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
+  ops.autoFileRetryable.mockReturnValue(false)
+  ops.autoNamePending.mockReturnValue(false)
+  buffer.text = ''
   listeners.clear()
   docs.getState().load({ filePath: null, text: '', mtimeMs: null })
   workspace.setState({ autosave: true })
@@ -140,5 +148,58 @@ describe('autosave', () => {
     release?.()
     await vi.advanceTimersByTimeAsync(2000)
     expect(ops.saveNewByTitle).toHaveBeenCalledTimes(2)
+  })
+
+  it('still renames a clean document whose title moved while an earlier rename was in flight', async () => {
+    // The save that follows a rename clears the dirty flag; a title typed
+    // meanwhile must not be forgotten along with it.
+    docs.getState().load({
+      filePath: '/notes/Weekly review.md', text: '# Weekly review\n', mtimeMs: 1, namedByTitle: true,
+    })
+    ops.autoNamePending.mockReturnValue(true)
+    type('# Weekly review final\n')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ops.syncAutoName).toHaveBeenCalledOnce()
+    // Nothing was unsaved, so there is nothing to write.
+    expect(ops.save).not.toHaveBeenCalled()
+  })
+
+  it('queues another pass when the title changes during one', async () => {
+    docs.getState().load({
+      filePath: '/notes/Weekly.md', text: '# Weekly\n', mtimeMs: 1, namedByTitle: true,
+    })
+    docs.getState().setDirty(true)
+    ops.syncAutoName.mockImplementationOnce(async () => {
+      // Typing during the rename, which also leaves the document clean once
+      // the save lands.
+      type('# Weekly final\n')
+      ops.autoNamePending.mockReturnValue(true)
+    })
+    ops.save.mockImplementation(async () => {
+      docs.getState().setDirty(false)
+      return true
+    })
+    type('# Weekly review\n')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ops.syncAutoName).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ops.syncAutoName).toHaveBeenCalledTimes(2)
+  })
+
+  it('tries again by itself when filing the buffer failed, until told to stop', async () => {
+    ops.saveNewByTitle.mockResolvedValue(false)
+    ops.autoFileRetryable.mockReturnValue(true)
+    docs.getState().setDirty(true)
+    type()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ops.saveNewByTitle).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ops.saveNewByTitle).toHaveBeenCalledTimes(2)
+
+    ops.autoFileRetryable.mockReturnValue(false)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ops.saveNewByTitle).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(ops.saveNewByTitle).toHaveBeenCalledTimes(3)
   })
 })

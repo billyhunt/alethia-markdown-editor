@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { BrowserWindow, Menu } from 'electron'
+import { canonicalPath } from './paths.ts'
 import { clearRecentFolders, listRecentFolders } from './recents.ts'
 import type { FolderSwitcherResult } from '../shared/api.ts'
 
@@ -17,6 +18,11 @@ export async function showFolderSwitcherMenu(
   current: string | null,
 ): Promise<FolderSwitcherResult> {
   const recents = await listRecentFolders()
+  // Recents hold real paths, while the renderer reports the folder as it was
+  // chosen: a vault reached through a symlink (or /var for /private/var)
+  // would otherwise never be ticked, and picking it would reopen it.
+  const open = current === null ? null : await canonicalPath(current).catch(() => current)
+  const isOpen = (dir: string): boolean => dir === current || dir === open
 
   return new Promise<FolderSwitcherResult>((resolve) => {
     let outcome: FolderSwitcherResult = { action: 'cancelled' }
@@ -28,11 +34,11 @@ export async function showFolderSwitcherMenu(
       sublabel: path.dirname(dir),
       toolTip: dir,
       type: 'checkbox',
-      checked: dir === current,
+      checked: isOpen(dir),
       click: () => {
         // Re-opening the folder that is already open would only cost a
         // rescan; treat it as a dismissal.
-        outcome = dir === current ? { action: 'cancelled' } : { action: 'switch', path: dir }
+        outcome = isOpen(dir) ? { action: 'cancelled' } : { action: 'switch', path: dir }
       },
     }))
 

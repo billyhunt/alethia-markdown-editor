@@ -43,30 +43,49 @@ export function clearRecents(): void {
  */
 export async function listRecentFolders(): Promise<string[]> {
   const stored = getSettings().recentFolders
-  // Checked in parallel: one entry on a sleeping network share should not
-  // hold up the switcher, or window restore, for everything behind it.
-  const alive = (
-    await Promise.all(
-      stored.map(async (dir) => {
-        try {
-          return (await fs.stat(dir)).isDirectory() ? dir : null
-        } catch (error) {
-          // Only definite absence drops a folder. An unplugged drive, a
-          // sleeping share or a permission prompt that was declined is a
-          // temporary condition, and forgetting the user's vault over one
-          // would be unrecoverable from here.
-          const code = (error as NodeJS.ErrnoException).code
-          return code === 'ENOENT' || code === 'ENOTDIR' ? null : dir
-        }
-      }),
-    )
-  ).filter((dir): dir is string => dir !== null)
-
-  if (alive.length !== stored.length) {
+  // Checked in parallel and each bounded: one entry on a sleeping network
+  // share should not hold up the switcher, or window restore, for everything
+  // behind it.
+  const gone = new Set(
+    (await Promise.all(stored.map(async (dir) => ((await isDefinitelyGone(dir)) ? dir : null)))).filter(
+      (dir): dir is string => dir !== null,
+    ),
+  )
+  // The stats took time, during which a folder may have been opened or the
+  // list cleared. Prune what is current rather than overwriting it with the
+  // snapshot read before the await.
+  const current = getSettings().recentFolders
+  const alive = current.filter((dir) => !gone.has(dir))
+  if (alive.length !== current.length) {
     patchSettings({ recentFolders: alive })
     announceRecentFolders(alive)
   }
   return alive
+}
+
+/** How long one folder may take to answer before it is assumed to be there. */
+const FOLDER_STAT_TIMEOUT_MS = 1500
+
+/**
+ * Only definite absence drops a folder. An unplugged drive, a sleeping share,
+ * a stat that does not answer in time or a permission prompt that was
+ * declined is a temporary condition, and forgetting the user's vault over one
+ * would be unrecoverable from here.
+ */
+async function isDefinitelyGone(dir: string): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined
+  const timedOut = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), FOLDER_STAT_TIMEOUT_MS)
+  })
+  try {
+    const result = await Promise.race([fs.stat(dir), timedOut])
+    return result !== 'timeout' && !result.isDirectory()
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    return code === 'ENOENT' || code === 'ENOTDIR'
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /**

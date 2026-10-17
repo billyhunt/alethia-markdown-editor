@@ -10,7 +10,7 @@ const windows = vi.hoisted(() => [
 ])
 vi.mock('electron', () => ({
   app: { getPath: () => USER_DATA, addRecentDocument: vi.fn(), clearRecentDocuments: vi.fn() },
-  Menu: { buildFromTemplate: vi.fn(() => ({})), setApplicationMenu: vi.fn() },
+  Menu: { buildFromTemplate: vi.fn((template: unknown) => template), setApplicationMenu: vi.fn() },
   BrowserWindow: {
     getFocusedWindow: () => null,
     getAllWindows: () => windows,
@@ -22,15 +22,19 @@ vi.mock('electron', () => ({
 
 const { addRecentFolder, clearRecentFolders, listRecentFolders, grantPersistedRecents } =
   await import('../../src/main/recents.ts')
-const { getSettings, patchSettings } = await import('../../src/main/settings.ts')
+const { getSettings, loadSettings, patchSettings } = await import('../../src/main/settings.ts')
+const { buildApplicationMenu } = await import('../../src/main/menu.ts')
+const { Menu } = await import('electron')
 const { assertReadableDir, grantRoot } = await import('../../src/main/paths.ts')
 
 let vaultA: string
 let vaultB: string
 
 beforeAll(async () => {
-  vaultA = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-a-'))
-  vaultB = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-b-'))
+  // Canonical, as main reports and stores them: the macOS temp dir is a symlink.
+  vaultA = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-a-')))
+  vaultB = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-b-')))
+  await fs.mkdir(USER_DATA, { recursive: true })
   // Recording a folder no longer grants it, so these stand in for folders
   // the user opened through the directory dialog.
   grantRoot(vaultA)
@@ -70,7 +74,7 @@ describe('recent workspace folders', () => {
   })
 
   it('re-grants stored folders on the next launch', async () => {
-    const revisited = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-c-'))
+    const revisited = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-c-')))
     patchSettings({ recentFolders: [revisited] })
     grantPersistedRecents()
     await expect(assertReadableDir(revisited)).resolves.toBe(revisited)
@@ -78,7 +82,7 @@ describe('recent workspace folders', () => {
   })
 
   it('drops folders that have gone away rather than offering them', async () => {
-    const doomed = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-gone-'))
+    const doomed = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-vault-gone-')))
     grantRoot(doomed)
     await addRecentFolder(vaultA)
     await addRecentFolder(doomed)
@@ -119,5 +123,75 @@ describe('recent workspace folders', () => {
     await addRecentFolder(vaultA)
     clearRecentFolders()
     expect(await listRecentFolders()).toEqual([])
+  })
+})
+
+describe('recent folders hardening', () => {
+  const submenuLabels = (): string[] => {
+    buildApplicationMenu()
+    const template = vi.mocked(Menu.buildFromTemplate).mock.calls.at(-1)?.[0] as Array<{
+      label?: string
+      submenu?: Array<{ label?: string; submenu?: Array<{ label?: string }> }>
+    }>
+    const file = template.find((entry) => entry.label === 'File')
+    const recent = file?.submenu?.find((entry) => entry.label === 'Open Recent Folder')
+    return (recent?.submenu ?? []).map((entry) => entry.label ?? '')
+  }
+
+  it.each([
+    ['a string', 'oops'],
+    ['an object', { 0: '/' }],
+    ['a number', 7],
+    ['null', null],
+    ['an array of non-strings', [1, null, { path: '/' }, ['/']]],
+  ])('survives settings.json holding %s as recentFolders', async (_label, junk) => {
+    await fs.writeFile(
+      path.join(USER_DATA, 'settings.json'),
+      JSON.stringify({ recentFolders: junk }),
+    )
+    loadSettings()
+    expect(getSettings().recentFolders).toEqual([])
+    expect(await listRecentFolders()).toEqual([])
+    expect(submenuLabels()).toEqual([])
+    // And the per-launch grant has nothing to hand out.
+    expect(() => grantPersistedRecents()).not.toThrow()
+  })
+
+  it('keeps only the strings of a partly valid list', async () => {
+    await fs.writeFile(
+      path.join(USER_DATA, 'settings.json'),
+      JSON.stringify({ recentFolders: [vaultA, 5, null, vaultB] }),
+    )
+    loadSettings()
+    expect(getSettings().recentFolders).toEqual([vaultA, vaultB])
+    expect(submenuLabels()).toHaveLength(2)
+  })
+
+  it('does not overwrite a folder opened while the stats were in flight', async () => {
+    await addRecentFolder(vaultA)
+    const realStat = fs.stat.bind(fs)
+    const stat = vi.spyOn(fs, 'stat').mockImplementation(async (...args: Parameters<typeof fs.stat>) => {
+      // A folder is opened in another window while this one is still checking.
+      await addRecentFolder(vaultB)
+      return realStat(...args)
+    })
+    await listRecentFolders()
+    stat.mockRestore()
+    expect(getSettings().recentFolders).toEqual([vaultB, vaultA])
+  })
+
+  it('does not wait on a folder whose stat never answers, and does not forget it', async () => {
+    vi.useFakeTimers()
+    try {
+      await addRecentFolder(vaultA)
+      const stat = vi.spyOn(fs, 'stat').mockImplementation(() => new Promise(() => {}))
+      const listing = listRecentFolders()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(await listing).toEqual([vaultA])
+      expect(getSettings().recentFolders).toEqual([vaultA])
+      stat.mockRestore()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

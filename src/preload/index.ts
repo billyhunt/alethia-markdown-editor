@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import type { MarkdownApi, Unsubscribe } from '../shared/api.ts'
 
+// This private invoke is available only to preload code. The page cannot
+// read the value or call the IPC channel directly.
+const dropTokenPromise = ipcRenderer.invoke(IPC.appPreloadToken) as Promise<string>
+
 /**
  * The only file on the renderer side allowed to touch ipcRenderer.
  *
@@ -62,10 +66,19 @@ const api: MarkdownApi = {
     toggleMaximize: () => ipcRenderer.invoke(IPC.windowToggleMaximize),
     isFullScreen: () => ipcRenderer.invoke(IPC.windowIsFullScreen),
     setDocument: (info) => ipcRenderer.invoke(IPC.windowSetDocument, info),
+    settleOpen: () => ipcRenderer.invoke(IPC.windowSettleOpen),
+    revealDocument: (filePath) => ipcRenderer.invoke(IPC.windowRevealDocument, filePath),
+    releaseDocument: (filePath) => ipcRenderer.invoke(IPC.windowReleaseDocument, filePath),
+    rerouteOpen: (filePath) => ipcRenderer.invoke(IPC.windowRerouteOpen, filePath),
   },
   app: {
     rendererReady: () => ipcRenderer.invoke(IPC.appRendererReady),
-    grantDroppedPath: (filePath) => ipcRenderer.invoke(IPC.appGrantDroppedPath, filePath),
+    grantDroppedPath: (file) => {
+      const filePath = webUtils.getPathForFile(file)
+      if (!filePath) return Promise.reject(new Error('EPERM: untrusted drop'))
+      return dropTokenPromise.then((token) => ipcRenderer.invoke(IPC.appGrantDroppedPath, filePath, token))
+    },
+    openLinkedFile: (href, documentId) => ipcRenderer.invoke(IPC.appOpenLinkedFile, href, documentId),
   },
   versions: {
     list: (filePath) => ipcRenderer.invoke(IPC.versionsList, filePath),
@@ -83,8 +96,6 @@ const api: MarkdownApi = {
     openExternal: (url) => ipcRenderer.invoke(IPC.shellOpenExternal, url),
     showItemInFolder: (filePath) => ipcRenderer.invoke(IPC.shellShowItemInFolder, filePath),
   },
-  // File.path was removed from Electron; this is the supported replacement.
-  getPathForFile: (file) => webUtils.getPathForFile(file),
   on: {
     command: (cb) => subscribe(IPC.hostCommand, cb),
     openPath: (cb) => subscribe(IPC.hostOpenPath, cb),

@@ -1,14 +1,13 @@
 import path from 'node:path'
 import { app, Menu, shell, type MenuItemConstructorOptions, type BrowserWindow } from 'electron'
-import { IPC } from '../shared/ipc.ts'
-import { sendCommand, focusedWindow, sendToRenderer } from './commands.ts'
-import { createWindow } from './windows.ts'
+import { sendCommand, focusedWindow } from './commands.ts'
+import { createWindow, deliver } from './windows.ts'
 import { applyTheme } from './theme.ts'
 import { getSettings, patchSettings } from './settings.ts'
 import type { HostCommand } from '../shared/ipc.ts'
 import type { ThemePreference } from '../shared/settings.ts'
 
-const REPO_URL = 'https://github.com/'
+const REPO_URL = 'https://github.com/billyhunt/alethia-markdown-editor'
 
 /**
  * Menu items stay permanently enabled and the renderer no-ops when there is
@@ -60,15 +59,11 @@ function recentFoldersSubmenu(): MenuItemConstructorOptions {
       label: path.basename(dir) || dir,
       sublabel: path.dirname(dir),
       click: (_item, win) => {
-        const target = (win as BrowserWindow | undefined) ?? focusedWindow()
-        if (target) {
-          sendToRenderer(target, IPC.hostOpenPath, { path: dir, kind: 'dir' })
-          return
-        }
-        const created = createWindow()
-        created.webContents.once('did-finish-load', () =>
-          sendToRenderer(created, IPC.hostOpenPath, { path: dir, kind: 'dir' }),
-        )
+        // Delivered like any other routed open, so the window is reserved for
+        // the folder until the renderer has settled it, and a window that is
+        // not listening yet queues it.
+        const event = { path: dir, kind: 'dir' } as const
+        deliver((win as BrowserWindow | undefined) ?? focusedWindow() ?? createWindow(), event)
       },
     })),
   }
@@ -120,8 +115,11 @@ export function buildApplicationMenu(): void {
         { role: 'recentDocuments', submenu: [{ role: 'clearRecentDocuments' }] },
         recentFoldersSubmenu(),
         { type: 'separator' },
-        cmd('Close File', 'file:close', 'CmdOrCtrl+W'),
-        { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' },
+        // Cmd+W closes the window, as it does everywhere else on macOS.
+        // Closing just the document is the rarer act, so it takes the
+        // modified key.
+        cmd('Close File', 'file:close', 'CmdOrCtrl+Shift+W'),
+        { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+W' },
         { type: 'separator' },
         cmd('Save', 'file:save', 'CmdOrCtrl+S'),
         cmd('Save As…', 'file:saveAs', 'CmdOrCtrl+Shift+S'),
@@ -146,6 +144,24 @@ export function buildApplicationMenu(): void {
         { role: 'pasteAndMatchStyle' },
         { role: 'delete' },
         { role: 'selectAll' },
+        { type: 'separator' },
+        {
+          label: 'Find',
+          submenu: [
+            cmd('Find…', 'edit:find', 'CmdOrCtrl+F'),
+            // CodeMirror has a single panel and it always carries the replace
+            // field, so this opens the same thing Find does. It is here
+            // because nothing else in the app tells anyone that replace
+            // exists.
+            cmd('Find and Replace…', 'edit:findReplace', 'Alt+CmdOrCtrl+F'),
+            cmd('Find Next', 'edit:findNext', 'CmdOrCtrl+G'),
+            cmd('Find Previous', 'edit:findPrevious', 'Shift+CmdOrCtrl+G'),
+            { type: 'separator' },
+            // Apple's default here is Cmd+E, which Format already uses for
+            // Inline Code, so this one deviates deliberately.
+            cmd('Use Selection for Find', 'edit:useSelectionForFind', 'Shift+CmdOrCtrl+E'),
+          ],
+        },
         { type: 'separator' },
         { label: 'Speech', submenu: [{ role: 'startSpeaking' }, { role: 'stopSpeaking' }] },
       ],

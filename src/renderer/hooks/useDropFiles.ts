@@ -14,12 +14,13 @@ export function useDropFiles(): void {
       event.preventDefault()
       const file = event.dataTransfer?.files[0]
       if (!file) return
-      // File.path was removed from Electron; the path comes from the preload.
-      const path = api.getPathForFile(file)
-      if (!path) return
       void api.app
-        .grantDroppedPath(path)
-        .then((entry) => (entry.kind === 'dir' ? adoptFolder(entry.path) : openPath(entry.path)))
+        .grantDroppedPath(file)
+        .then((entry) =>
+          entry.kind === 'dir'
+            ? adoptFolder(entry.path)
+            : openPath(entry.path, { preferDocument: true }),
+        )
         .catch((error: unknown) =>
           api.dialog.showError({
             title: 'Could not open that file',

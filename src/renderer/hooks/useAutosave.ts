@@ -1,6 +1,12 @@
 import { useEffect } from 'react'
 import { editorController } from '../editor/editorController.ts'
-import { save, saveNewByTitle, syncAutoName } from '../services/fileOps.ts'
+import {
+  autoFileRetryable,
+  autoNamePending,
+  save,
+  saveNewByTitle,
+  syncAutoName,
+} from '../services/fileOps.ts'
 import { useDocumentStore } from '../state/documentStore.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 
@@ -32,7 +38,7 @@ export function useAutosave(): void {
       window.clearTimeout(timer)
       timer = window.setTimeout(() => {
         const { autosave } = useWorkspaceStore.getState()
-        const { dirty, filePath, namedByTitle } = useDocumentStore.getState()
+        if (!autosave) return
         // A save already in flight can take a while -- creating a file and
         // relisting a large folder -- so come back rather than dropping this
         // pass, which would otherwise leave the last edits unwritten until
@@ -41,7 +47,12 @@ export function useAutosave(): void {
           schedule()
           return
         }
-        if (!autosave || !dirty) return
+        const { dirty, filePath, namedByTitle } = useDocumentStore.getState()
+        // A clean document can still owe a rename: a title typed while an
+        // earlier rename was in flight is saved by the pass that follows it,
+        // which clears the flag this check used to rely on alone.
+        if (!dirty && !autoNamePending()) return
+        const attemptedText = editorController.getText()
         running = true
         void (async () => {
           if (!filePath) {
@@ -50,9 +61,17 @@ export function useAutosave(): void {
           }
           // Rename before writing, so the save lands on the current name.
           if (namedByTitle) await syncAutoName()
-          await save()
+          // Read again: typing during the rename may have changed it.
+          if (useDocumentStore.getState().dirty) await save()
         })().finally(() => {
           running = false
+          const current = useDocumentStore.getState()
+          const typedDuring = editorController.getText() !== attemptedText
+          const owesWork = (current.dirty && current.filePath !== null) || autoNamePending()
+          // A buffer that could not be filed is tried again by itself, a few
+          // times: the disk may only have been briefly full or busy, and the
+          // user may have stopped typing.
+          if ((typedDuring && owesWork) || autoFileRetryable()) schedule()
         })
       }, IDLE_MS)
     }

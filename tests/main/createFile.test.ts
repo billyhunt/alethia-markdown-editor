@@ -40,7 +40,9 @@ describe('createNamedFile', () => {
       name: 'Weekly review.md',
       content: '# Weekly review\n',
     })
-    expect(created.path).toBe(path.join(root, 'Weekly review.md'))
+    // The canonical path, which is what grants, recents and windows key on
+    // (/private/var, not /var, for a temp folder on macOS).
+    expect(created.path).toBe(path.join(await fs.realpath(root), 'Weekly review.md'))
     expect(created.mtimeMs).toBeGreaterThan(0)
     expect(await fs.readFile(created.path, 'utf8')).toBe('# Weekly review\n')
   })
@@ -67,9 +69,43 @@ describe('createNamedFile', () => {
     expect(await fs.readFile(path.join(root, 'Taken.md'), 'utf8')).toBe('# keep me')
   })
 
+  it('removes the partial file when the write fails, and the retry reuses the name', async () => {
+    const realOpen = fs.open.bind(fs)
+    const open = vi.spyOn(fs, 'open').mockImplementationOnce(async (...args: Parameters<typeof fs.open>) => {
+      const handle = await realOpen(...args)
+      // Half the data lands, then the disk fills.
+      handle.writeFile = async (data) => {
+        await handle.write(String(data).slice(0, 4))
+        throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+      }
+      return handle
+    })
+
+    await expect(
+      createNamedFile({ dir: root, name: 'Disk full.md', content: '# Disk full\n' }),
+    ).rejects.toThrow(/ENOSPC/)
+    open.mockRestore()
+
+    // Nothing truncated is left to be read back as the document.
+    await expect(fs.access(path.join(root, 'Disk full.md'))).rejects.toThrow()
+    // And a later attempt does not number itself around the wreckage.
+    const retried = await createNamedFile({ dir: root, name: 'Disk full.md', content: '# Disk full\n' })
+    expect(path.basename(retried.path)).toBe('Disk full.md')
+    expect(await fs.readFile(retried.path, 'utf8')).toBe('# Disk full\n')
+  })
+
+  it('never removes a file it did not create when the exclusive create fails', async () => {
+    await fs.writeFile(path.join(root, 'Theirs.md'), '# theirs')
+    const created = await createNamedFile({ dir: root, name: 'Theirs.md', content: '# mine' })
+    expect(path.basename(created.path)).toBe('Theirs 2.md')
+    expect(await fs.readFile(path.join(root, 'Theirs.md'), 'utf8')).toBe('# theirs')
+  })
+
   it('falls back to a folder of its own under Documents', async () => {
     const created = await createNamedFile({ name: 'Loose thought.md' })
-    expect(created.path).toBe(path.join(documents, 'Alethia', 'Loose thought.md'))
+    expect(created.path).toBe(
+      path.join(await fs.realpath(documents), 'Alethia', 'Loose thought.md'),
+    )
   })
 
   it.each([

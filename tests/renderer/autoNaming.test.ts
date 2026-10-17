@@ -5,7 +5,7 @@ const host = vi.hoisted(() => ({
   fs: { createFile: vi.fn(), writeFile: vi.fn(), rename: vi.fn(), readFile: vi.fn() },
   folder: { list: vi.fn() },
   document: { watch: vi.fn(), unwatch: vi.fn() },
-  recents: { add: vi.fn() },
+  recents: { add: vi.fn(), addFolder: vi.fn(), listFolders: vi.fn() },
 }))
 vi.mock('../../src/renderer/api.ts', () => ({ api: host, unwrapIpcError: String }))
 const buffer = vi.hoisted(() => ({ text: '' }))
@@ -19,7 +19,10 @@ vi.mock('../../src/renderer/editor/editorController.ts', () => ({
 import {
   forgetTrashedFile,
   newDocument,
+  autoFileRetryable,
+  autoNamePending,
   renameFile,
+  save,
   saveAs,
   saveNewByTitle,
   syncAutoName,
@@ -35,6 +38,9 @@ beforeEach(() => {
   workspace.setState({ folderRoot: '/notes', tree: null, notice: null })
   host.folder.list.mockResolvedValue({ root: '/notes', tree: null, truncated: false })
   host.fs.writeFile.mockResolvedValue({ ok: true, mtimeMs: 10 })
+  host.document.watch.mockResolvedValue('doc-1')
+  host.document.unwatch.mockResolvedValue(undefined)
+  host.recents.add.mockResolvedValue(undefined)
 })
 
 describe('saving a new document under its title', () => {
@@ -152,6 +158,73 @@ describe('saving a new document under its title', () => {
     expect(host.dialog.showError).not.toHaveBeenCalled()
   })
 
+  it('says so at the first failure, and offers to try again by itself a few times', async () => {
+    buffer.text = '# Notes\n'
+    host.fs.createFile.mockRejectedValue(
+      Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }),
+    )
+
+    await saveNewByTitle()
+    expect(workspace.getState().notice?.message).toMatch(/could not be saved automatically/)
+    expect(autoFileRetryable()).toBe(true)
+    await saveNewByTitle()
+    await saveNewByTitle()
+    // After that only a further edit tries again, rather than hammering a
+    // disk that is not coming back.
+    expect(autoFileRetryable()).toBe(false)
+  })
+
+  it('clears the notice and stops retrying once the file is created', async () => {
+    buffer.text = '# Notes\n'
+    host.fs.createFile.mockRejectedValueOnce(new Error('EIO'))
+    await saveNewByTitle()
+    expect(workspace.getState().notice).not.toBeNull()
+
+    host.fs.createFile.mockResolvedValue({ path: '/notes/Notes.md', mtimeMs: 4 })
+    expect(await saveNewByTitle()).toBe(true)
+    expect(workspace.getState().notice).toBeNull()
+    expect(autoFileRetryable()).toBe(false)
+  })
+
+  it('does not count one buffer\'s failures against the next', async () => {
+    buffer.text = '# Notes\n'
+    host.fs.createFile.mockRejectedValue(new Error('EIO'))
+    await saveNewByTitle()
+    await saveNewByTitle()
+    await saveNewByTitle()
+    expect(autoFileRetryable()).toBe(false)
+
+    docs.getState().load({ filePath: null, text: '', mtimeMs: null })
+    await saveNewByTitle()
+    expect(autoFileRetryable()).toBe(true)
+  })
+
+  it('tells main about the new file before the editor learns its path', async () => {
+    buffer.text = '# Ordered\n'
+    host.fs.createFile.mockResolvedValue({ path: '/notes/Ordered.md', mtimeMs: 2 })
+    let pathWhenWatched: string | null | undefined
+    host.document.watch.mockImplementation(async () => {
+      pathWhenWatched = docs.getState().filePath
+      return 'doc-new'
+    })
+
+    await saveNewByTitle()
+    // An image request that beat this would be refused as "not open".
+    expect(pathWhenWatched).toBeNull()
+    expect(docs.getState()).toMatchObject({ filePath: '/notes/Ordered.md', documentId: 'doc-new' })
+  })
+
+  it('still adopts a file it created when watching it fails', async () => {
+    // Otherwise the path would stay unpublished and the next pass would
+    // create a second file for the same text.
+    buffer.text = '# Watched\n'
+    host.fs.createFile.mockResolvedValue({ path: '/notes/Watched.md', mtimeMs: 2 })
+    host.document.watch.mockRejectedValue(new Error('EPERM'))
+
+    expect(await saveNewByTitle()).toBe(true)
+    expect(docs.getState()).toMatchObject({ filePath: '/notes/Watched.md', documentId: null })
+  })
+
   it('does nothing for a document that already has a path', async () => {
     docs.getState().load({ filePath: '/notes/Existing.md', text: '', mtimeMs: 1 })
     buffer.text = '# Renamed later\n'
@@ -170,7 +243,7 @@ describe('keeping an automatic name in step with the title', () => {
   it('renames the file when the title changes, keeping unsaved edits', async () => {
     buffer.text = '# Weekly review\n\nmore\n'
     docs.getState().setDirty(true)
-    host.fs.rename.mockResolvedValue('/notes/Weekly review.md')
+    host.fs.rename.mockResolvedValue({ path: '/notes/Weekly review.md' })
 
     await syncAutoName()
     expect(host.fs.rename).toHaveBeenCalledWith('/notes/Weekly.md', 'Weekly review.md')
@@ -182,6 +255,89 @@ describe('keeping an automatic name in step with the title', () => {
       namedByTitle: true,
     })
     expect(host.document.watch).toHaveBeenCalledWith('/notes/Weekly review.md')
+  })
+
+  it('tells main about the new name before the editor learns it, and keeps the document id', async () => {
+    buffer.text = '# Weekly review\n'
+    host.fs.rename.mockResolvedValue({ path: '/notes/Weekly review.md' })
+    let pathWhenWatched: string | null | undefined
+    host.document.watch.mockImplementation(async () => {
+      pathWhenWatched = docs.getState().filePath
+      return 'doc-renamed'
+    })
+
+    await syncAutoName()
+    expect(pathWhenWatched).toBe('/notes/Weekly.md')
+    expect(docs.getState()).toMatchObject({
+      filePath: '/notes/Weekly review.md',
+      documentId: 'doc-renamed',
+    })
+  })
+
+  it('still follows the file when watching the new name fails', async () => {
+    // The file has moved on disk; leaving the document on the old name would
+    // make the next save recreate it.
+    buffer.text = '# Weekly review\n'
+    host.fs.rename.mockResolvedValue({ path: '/notes/Weekly review.md' })
+    host.document.watch.mockRejectedValue(new Error('EPERM'))
+
+    await syncAutoName()
+    expect(docs.getState().filePath).toBe('/notes/Weekly review.md')
+  })
+
+  it('reports whether the title and the file name have drifted apart, dirty or not', () => {
+    expect(autoNamePending()).toBe(false)
+    buffer.text = '# Weekly review\n'
+    expect(docs.getState().dirty).toBe(false)
+    expect(autoNamePending()).toBe(true)
+  })
+
+  it('holds a save back while the rename is in flight, then writes the new name only', async () => {
+    buffer.text = '# Weekly review\n'
+    docs.getState().setDirty(true)
+    let finishRename!: () => void
+    host.fs.rename.mockImplementation(
+      () => new Promise((resolve) => { finishRename = () => resolve({ path: '/notes/Weekly review.md' }) }),
+    )
+
+    const renaming = syncAutoName()
+    await vi.waitFor(() => expect(host.fs.rename).toHaveBeenCalled())
+    const saving = save()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // Aimed at the old name now, it would be refused as stale -- or, worse,
+    // recreate the file the rename just moved.
+    expect(host.fs.writeFile).not.toHaveBeenCalled()
+
+    finishRename()
+    await renaming
+    expect(await saving).toBe(true)
+    expect(host.fs.writeFile).toHaveBeenCalledTimes(1)
+    expect(host.fs.writeFile.mock.calls[0][0]).toBe('/notes/Weekly review.md')
+    expect(docs.getState()).toMatchObject({ filePath: '/notes/Weekly review.md', dirty: false })
+  })
+
+  it('lets a save already in flight finish before renaming the file under it', async () => {
+    buffer.text = '# Weekly review\n'
+    docs.getState().setDirty(true)
+    let finishWrite!: () => void
+    host.fs.writeFile.mockImplementation(
+      () => new Promise((resolve) => { finishWrite = () => resolve({ ok: true, mtimeMs: 11 }) }),
+    )
+    host.fs.rename.mockResolvedValue({ path: '/notes/Weekly review.md' })
+
+    const saving = save()
+    await vi.waitFor(() => expect(host.fs.writeFile).toHaveBeenCalled())
+    const renaming = syncAutoName()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(host.fs.rename).not.toHaveBeenCalled()
+
+    finishWrite()
+    await saving
+    await renaming
+    expect(host.fs.writeFile).toHaveBeenCalledTimes(1)
+    expect(host.fs.writeFile.mock.calls[0][0]).toBe('/notes/Weekly.md')
+    expect(host.fs.rename).toHaveBeenCalledWith('/notes/Weekly.md', 'Weekly review.md')
+    expect(docs.getState().filePath).toBe('/notes/Weekly review.md')
   })
 
   it('stays put when the title still matches, or has gone away', async () => {
@@ -196,7 +352,7 @@ describe('keeping an automatic name in step with the title', () => {
     buffer.text = '# Weekly review\n'
     host.fs.rename.mockImplementation(async () => {
       docs.getState().load({ filePath: '/notes/Other.md', text: '# Other\n', mtimeMs: 2 })
-      return '/notes/Weekly review.md'
+      return { path: '/notes/Weekly review.md' }
     })
 
     await syncAutoName()
@@ -245,13 +401,13 @@ describe('keeping an automatic name in step with the title', () => {
 
     // A genuinely new title still moves it.
     buffer.text = '# Taken later\n'
-    host.fs.rename.mockResolvedValue('/notes/Taken later.md')
+    host.fs.rename.mockResolvedValue({ path: '/notes/Taken later.md' })
     await syncAutoName()
     expect(host.fs.rename).toHaveBeenCalledWith('/notes/Taken 2.md', 'Taken later.md')
   })
 
   it('stops following the title once the user names the file themselves', async () => {
-    host.fs.rename.mockResolvedValue('/notes/My name.md')
+    host.fs.rename.mockResolvedValue({ path: '/notes/My name.md' })
     await renameFile('/notes/Weekly.md', 'My name')
     expect(docs.getState().namedByTitle).toBe(false)
 

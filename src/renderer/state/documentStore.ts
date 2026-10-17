@@ -4,6 +4,9 @@ import type { LineEnding } from '../../shared/api'
 export interface DocumentState {
   /** Absolute path, or null for a document that has never been saved. */
   filePath: string | null
+  documentId: string | null
+  /** Bumped whenever another document takes over this window. */
+  revision: number
   /** The text as last read from or written to disk. */
   savedText: string
   /** mtime of the last read/write; null for an unsaved document. */
@@ -31,16 +34,10 @@ export interface DocumentState {
    * not something to write into the user's folder behind their back.
    */
   autoNameable: boolean
-  /**
-   * Bumped whenever a different document takes over the editor. Work started
-   * against one document and finished after an await checks this before
-   * writing anything back, so a save in flight cannot attach itself to
-   * whatever the user opened in the meantime.
-   */
-  revision: number
 
   load: (doc: {
     filePath: string | null
+    documentId?: string | null
     text: string
     mtimeMs: number | null
     lineEnding?: LineEnding
@@ -57,10 +54,13 @@ export interface DocumentState {
     namedByTitle?: boolean
     autoNameBase?: string | null
   }) => void
-  /** The file moved. Its content, and therefore its dirty state, did not. */
+  /**
+   * The file moved. Its content, and therefore its dirty state, did not, and
+   * it is still the same document, so `revision` is not bumped.
+   */
   setPath: (
     filePath: string,
-    naming: { namedByTitle: boolean; autoNameBase?: string | null },
+    naming: { namedByTitle: boolean; autoNameBase?: string | null; documentId: string | null },
   ) => void
   /**
    * Records the name the title produced even when the rename was refused, so
@@ -74,6 +74,8 @@ export interface DocumentState {
 
 export const useDocumentStore = create<DocumentState>((set) => ({
   filePath: null,
+  documentId: null,
+  revision: 0,
   savedText: '',
   mtimeMs: null,
   lineEnding: '\n',
@@ -81,11 +83,15 @@ export const useDocumentStore = create<DocumentState>((set) => ({
   namedByTitle: false,
   autoNameBase: null,
   autoNameable: true,
-  revision: 0,
 
-  load: ({ filePath, text, mtimeMs, lineEnding, namedByTitle, autoNameBase, autoNameable }) =>
+  load: ({ filePath, documentId, text, mtimeMs, lineEnding, namedByTitle, autoNameBase, autoNameable }) =>
     set((state) => ({
       filePath,
+      documentId:
+        documentId === undefined
+          ? state.filePath === filePath ? state.documentId : null
+          : documentId,
+      revision: state.revision + 1,
       savedText: text,
       mtimeMs,
       lineEnding: lineEnding ?? '\n',
@@ -94,20 +100,23 @@ export const useDocumentStore = create<DocumentState>((set) => ({
       // A reload keeps the naming it had; a different document starts over.
       autoNameBase: autoNameBase ?? (namedByTitle ? state.autoNameBase : null),
       autoNameable: autoNameable ?? (filePath === null && text === ''),
-      revision: state.revision + 1,
     })),
+  // Main resolves relative links against the path behind documentId, so an id
+  // must never outlive a change of path (Save As) while its re-watch is pending.
   markSaved: ({ filePath, text, mtimeMs, namedByTitle, autoNameBase }) =>
     set((state) => ({
       filePath,
+      documentId: state.filePath === filePath ? state.documentId : null,
       savedText: text,
       mtimeMs,
       dirty: false,
       namedByTitle: namedByTitle ?? state.namedByTitle,
       autoNameBase: autoNameBase ?? state.autoNameBase,
     })),
-  setPath: (filePath, { namedByTitle, autoNameBase }) =>
+  setPath: (filePath, { namedByTitle, autoNameBase, documentId }) =>
     set((state) => ({
       filePath,
+      documentId,
       namedByTitle,
       autoNameBase: namedByTitle ? (autoNameBase ?? state.autoNameBase) : null,
     })),

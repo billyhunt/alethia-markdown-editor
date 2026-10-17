@@ -2,6 +2,7 @@ import { api } from '../api.ts'
 import { editorController } from '../editor/editorController.ts'
 import { useDocumentStore } from '../state/documentStore.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
+import { overwriteCurrentFile } from './fileOps.ts'
 import type { FileChangeEvent } from '../../shared/api'
 
 /**
@@ -69,9 +70,8 @@ export async function handleFileChange(event: FileChangeEvent): Promise<void> {
       {
         label: 'Keep mine',
         run: () => {
-          // Adopt the new mtime so the next save is not reported as a conflict.
-          useDocumentStore.getState().syncMtime(event.mtimeMs)
-          useWorkspaceStore.getState().setNotice(null)
+          // This is an explicit choice to replace the externally changed file.
+          void overwriteCurrentFile(event.path)
         },
       },
     ],

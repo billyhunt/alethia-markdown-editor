@@ -1,6 +1,7 @@
 import { EditorView } from '@codemirror/view'
 import type { Extension } from '@codemirror/state'
 import { api } from '../../api.ts'
+import { useDocumentStore } from '../../state/documentStore.ts'
 
 /**
  * Cmd/Ctrl-click opens a rendered link externally. A plain click is left alone
@@ -16,8 +17,18 @@ export const linkClick = (): Extension => [
       const target = event.target as HTMLElement | null
       const href = target?.closest<HTMLElement>('.cm-md-link')?.dataset.href
       if (!href) return false
+      if (href.startsWith('#')) return false
       event.preventDefault()
-      void api.shell.openExternal(href).catch(() => undefined)
+      if (/^https?:\/\//i.test(href)) {
+        void api.shell.openExternal(href).catch(() => undefined)
+      } else if (/^[a-z][a-z\d+.-]*:/i.test(href)) {
+        return false
+      } else {
+        const documentId = useDocumentStore.getState().documentId
+        if (documentId) void api.app.openLinkedFile(href, documentId).catch((error) =>
+          api.dialog.showError({ title: 'Could not open linked file', message: String(error) }),
+        )
+      }
       return true
     },
   }),

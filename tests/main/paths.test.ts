@@ -2,14 +2,22 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import {
+  assertGranted,
+  assertReadable,
+  assertReadableDir,
+  assertWritable,
+  grantFile,
+  grantRoot,
+  resolveWriteTarget,
+  validatePath,
+} from '../../src/main/paths.ts'
+import { writeTextFile } from '../../src/main/files.ts'
 
 // paths.ts reaches for app.getPath('userData') to protect the settings
 // directory; there is no Electron app object in a test run.
 const USER_DATA = path.join(os.tmpdir(), 'alethia-test-userdata')
 vi.mock('electron', () => ({ app: { getPath: () => USER_DATA } }))
-
-const { assertReadable, assertReadableDir, assertWritable, grantFile, grantRoot, validatePath } =
-  await import('../../src/main/paths.ts')
 
 let root: string
 let granted: string
@@ -56,7 +64,7 @@ describe('the grant registry', () => {
 
   it('allows a file once granted', async () => {
     grantFile(granted)
-    await expect(assertReadable(granted)).resolves.toBe(granted)
+    await expect(assertReadable(granted)).resolves.toBe(await fs.realpath(granted))
   })
 
   it('grants a whole subtree when a folder is opened', async () => {
@@ -82,6 +90,13 @@ describe('the grant registry', () => {
     // The real path is resolved before the grant is checked.
     await expect(assertReadable(link)).rejects.toThrow(/EPERM/)
   })
+
+  it('returns the canonical path after authorizing a granted symlink', async () => {
+    grantRoot(root)
+    const link = path.join(root, 'inside.md')
+    await fs.symlink(granted, link)
+    await expect(assertReadable(link)).resolves.toBe(await fs.realpath(granted))
+  })
 })
 
 describe('assertReadable', () => {
@@ -103,7 +118,7 @@ describe('assertReadable', () => {
 describe('assertWritable', () => {
   it('allows a granted markdown file', async () => {
     grantRoot(root)
-    await expect(assertWritable(granted)).resolves.toBe(granted)
+    await expect(assertWritable(granted)).resolves.toBe(await fs.realpath(granted))
   })
 
   it('refuses writing plain text, which reads fine but is not a save target', async () => {
@@ -130,10 +145,53 @@ describe('assertWritable', () => {
   })
 })
 
+describe('a dangling symlink inside a granted root', () => {
+  let target: string
+  let link: string
+  beforeAll(async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-dangling-'))
+    target = path.join(dir, 'planted.md')
+    link = path.join(root, 'dangling.md')
+    await fs.symlink(target, link)
+  })
+  afterAll(async () => { await fs.rm(path.dirname(target), { recursive: true, force: true }) })
+
+  it('is refused for writing, and nothing is created at its target', async () => {
+    grantRoot(root)
+    await expect(assertWritable(link)).rejects.toThrow(/EPERM/)
+    await expect(writeTextFile(link, 'pwned')).rejects.toThrow(/EPERM/)
+    await expect(fs.stat(target)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('is refused for reading and for granting checks', async () => {
+    grantRoot(root)
+    await expect(assertReadable(link)).rejects.toThrow(/EPERM/)
+    await expect(assertGranted(link)).rejects.toThrow(/EPERM/)
+  })
+
+  it('does not resolve a link that appears between the check and the write', async () => {
+    grantRoot(root)
+    await expect(resolveWriteTarget(link)).rejects.toThrow(/EPERM/)
+  })
+})
+
+describe('writing through a live symlink inside a granted root', () => {
+  it('writes the real file that the check approved', async () => {
+    const real = path.join(root, 'real-note.md')
+    const alias = path.join(root, 'alias-note.md')
+    await fs.writeFile(real, 'old')
+    await fs.symlink(real, alias)
+    grantRoot(root)
+    await writeTextFile(alias, 'new')
+    expect(await fs.readFile(real, 'utf8')).toBe('new')
+    expect((await fs.lstat(alias)).isSymbolicLink()).toBe(true)
+  })
+})
+
 describe('assertReadableDir', () => {
   it('accepts a granted root and refuses an ungranted directory', async () => {
     grantRoot(root)
-    await expect(assertReadableDir(root)).resolves.toBe(root)
+    await expect(assertReadableDir(root)).resolves.toBe(await fs.realpath(root))
     await expect(assertReadableDir(path.dirname(outside))).rejects.toThrow(/EPERM/)
   })
 })

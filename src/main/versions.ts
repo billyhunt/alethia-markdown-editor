@@ -68,6 +68,53 @@ const hashOf = (content: string): string =>
 
 const dirFor = (filePath: string): string => path.join(versionsRoot(), keyFor(filePath))
 
+/** Moves the local history directory when its document changes paths. */
+export async function moveVersionHistory(from: string, to: string): Promise<void> {
+  const source = dirFor(from)
+  const destination = dirFor(to)
+  try {
+    await fs.rename(source, destination)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    if (!['EEXIST', 'ENOTEMPTY'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
+    // A file may have history from an earlier time at its new path. Keep both
+    // sets and give any colliding snapshot a fresh, increasing timestamp.
+    for (const name of await fs.readdir(source)) {
+      if (name === 'origin.json') continue
+      const oldPath = path.join(source, name)
+      let target = path.join(destination, name)
+      try {
+        await fs.link(oldPath, target)
+      } catch (linkError) {
+        if ((linkError as NodeJS.ErrnoException).code !== 'EEXIST') throw linkError
+        const match = VERSION_FILE.exec(name)
+        if (!match) continue
+        for (let stamp = Math.max(Date.now(), Number(match[1]) + 1); ; stamp++) {
+          target = path.join(destination, `${stamp}-${match[2]}.snapshot`)
+          try {
+            await fs.link(oldPath, target)
+            break
+          } catch (retryError) {
+            if ((retryError as NodeJS.ErrnoException).code !== 'EEXIST') throw retryError
+          }
+        }
+      }
+      await fs.unlink(oldPath)
+    }
+    await fs.rm(source, { recursive: true, force: true })
+  }
+  const movedStamp = lastStamp.get(source) ?? 0
+  const destinationStamp = lastStamp.get(destination) ?? 0
+  const existingStamp = Math.max(0, ...(await entriesFor(to)).map((version) => version.savedAt))
+  lastStamp.delete(source)
+  lastStamp.set(destination, Math.max(movedStamp, destinationStamp, existingStamp))
+  // The history has already moved. This note only helps maintenance find its
+  // owner, so failing to rewrite it must not report the history as stranded.
+  await fs
+    .writeFile(path.join(destination, 'origin.json'), JSON.stringify({ path: to }, null, 2))
+    .catch(() => undefined)
+}
+
 /**
  * The newest stamp handed out per file.
  *
@@ -118,8 +165,9 @@ async function entriesFor(filePath: string): Promise<DocumentVersion[]> {
 export async function snapshotVersion(filePath: string, content: string): Promise<void> {
   if (content.length === 0) return
 
-  const dir = dirFor(filePath)
-  const existing = await entriesFor(filePath)
+  const readablePath = await assertReadable(filePath)
+  const dir = dirFor(readablePath)
+  const existing = await entriesFor(readablePath)
   const hash = hashOf(content)
   if (existing[0]?.hash === hash) return
 
@@ -127,55 +175,16 @@ export async function snapshotVersion(filePath: string, content: string): Promis
   // Keeps the originating path discoverable for maintenance and cleanup,
   // since the directory name is only a hash.
   await fs
-    .writeFile(path.join(dir, 'origin.json'), JSON.stringify({ path: filePath }, null, 2), {
+    .writeFile(path.join(dir, 'origin.json'), JSON.stringify({ path: readablePath }, null, 2), {
       flag: 'w',
     })
     .catch(() => undefined)
   await fs.writeFile(path.join(dir, `${nextStamp(dir)}-${hash}.snapshot`), content, 'utf8')
 
-  const all = await entriesFor(filePath)
+  const all = await entriesFor(readablePath)
   const stale = [...thin(all), ...all.slice(MAX_VERSIONS_PER_FILE)]
   for (const version of stale) {
     await fs.rm(path.join(dir, version.id), { force: true }).catch(() => undefined)
-  }
-}
-
-/**
- * Follows a renamed document, so its history is not stranded under the name
- * it used to have. Renaming is no longer only a deliberate act -- an
- * automatically named file follows its title -- and history that silently
- * detaches would undermine the whole reason autosaving is safe.
- *
- * A destination that already has history is left alone: that history belongs
- * to whatever used to live at this path, and merging the two would be worse
- * than leaving the old set where it is.
- */
-export async function moveVersions(from: string, to: string): Promise<void> {
-  const fromDir = dirFor(from)
-  const toDir = dirFor(to)
-  if (fromDir === toDir) return
-
-  try {
-    await fs.access(toDir)
-    return
-  } catch {
-    /* nothing there yet, which is the case worth handling */
-  }
-  try {
-    await fs.rename(fromDir, toDir)
-  } catch {
-    // No history to move, or it could not be moved; the live file is safe
-    // either way and this must never fail a rename.
-    return
-  }
-  await fs
-    .writeFile(path.join(toDir, 'origin.json'), JSON.stringify({ path: to }, null, 2), { flag: 'w' })
-    .catch(() => undefined)
-
-  const stamp = lastStamp.get(fromDir)
-  if (stamp !== undefined) {
-    lastStamp.set(toDir, stamp)
-    lastStamp.delete(fromDir)
   }
 }
 
