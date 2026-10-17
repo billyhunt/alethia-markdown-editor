@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const native = vi.hoisted(() => ({ windows: [] as any[], id: 10 }))
 vi.mock('electron', () => ({
+  app: { isPackaged: true },
   BrowserWindow: { getAllWindows: () => native.windows },
   nativeTheme: { shouldUseDarkColors: false },
   screen: {},
@@ -16,12 +17,12 @@ vi.mock('../../src/main/settings.ts', () => ({
   patchSettings: vi.fn(),
 }))
 vi.mock('../../src/main/watcher.ts', () => ({ closeWatchersFor: vi.fn() }))
-import { documentForId, noteDocument, windowShowing } from '../../src/main/windows.ts'
+import { documentForId, noteDocument } from '../../src/main/windows.ts'
 
 let root: string
 
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-window-identity-'))
+  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-window-identity-')))
   const win = {
     id: native.id++,
     isDestroyed: () => false,
@@ -33,31 +34,18 @@ beforeEach(async () => {
 
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }) })
 
-it('matches a symlinked open path to its canonical target window', async () => {
-  const real = path.join(root, 'real.md')
-  const alias = path.join(root, 'alias.md')
-  await fs.writeFile(real, '# note')
-  await fs.symlink(real, alias)
-  const win = native.windows[0]
-  noteDocument(win, alias)
-  expect(windowShowing(real)).toBe(win)
-  expect(windowShowing(alias)).toBe(win)
-})
-
+// Main only ever records canonical paths (docWatch resolves them first), so
+// identity here is plain path equality.
 it('keeps the document id when the same document is watched again, and changes it for another', async () => {
   const a = path.join(root, 'a.md')
   const b = path.join(root, 'b.md')
-  const alias = path.join(root, 'alias.md')
   await fs.writeFile(a, '# a')
   await fs.writeFile(b, '# b')
-  await fs.symlink(a, alias)
   const win = native.windows[0]
   const first = noteDocument(win, a)
   expect(first).toBeTruthy()
   expect(noteDocument(win, a)).toBe(first)
   expect(documentForId(win, first)).toBe(a)
-  expect(noteDocument(win, alias)).toBe(first)
-  expect(documentForId(win, first)).toBe(alias)
   const second = noteDocument(win, b)
   expect(second).not.toBe(first)
   expect(documentForId(win, first)).toBeNull()

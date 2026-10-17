@@ -16,7 +16,11 @@ export function useDropFiles(): void {
       if (!file) return
       void api.app
         .grantDroppedPath(file)
-        .then((entry) => (entry.kind === 'dir' ? adoptFolder(entry.path) : openPath(entry.path)))
+        .then((entry) =>
+          entry.kind === 'dir'
+            ? adoptFolder(entry.path)
+            : openPath(entry.path, { preferDocument: true }),
+        )
         .catch((error: unknown) =>
           api.dialog.showError({
             title: 'Could not open that file',

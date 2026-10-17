@@ -24,7 +24,7 @@ unmodified, so that does not arise.
 ## Libraries — MIT
 
 Editor and runtime: `@codemirror/*`, `@lezer/*`, `react`, `react-dom`,
-`zustand`, `chokidar`, `katex`.
+`zustand`, `chokidar`, `katex`, `turndown`.
 
 Build and packaging: `electron`, `vite`, `vite-plugin-electron`,
 `electron-builder`, `typescript`, `oxlint`.

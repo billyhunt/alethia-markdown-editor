@@ -62,6 +62,10 @@ const api: MarkdownApi = {
     toggleMaximize: () => ipcRenderer.invoke(IPC.windowToggleMaximize),
     isFullScreen: () => ipcRenderer.invoke(IPC.windowIsFullScreen),
     setDocument: (info) => ipcRenderer.invoke(IPC.windowSetDocument, info),
+    settleOpen: () => ipcRenderer.invoke(IPC.windowSettleOpen),
+    revealDocument: (filePath) => ipcRenderer.invoke(IPC.windowRevealDocument, filePath),
+    releaseDocument: (filePath) => ipcRenderer.invoke(IPC.windowReleaseDocument, filePath),
+    rerouteOpen: (filePath) => ipcRenderer.invoke(IPC.windowRerouteOpen, filePath),
   },
   app: {
     rendererReady: () => ipcRenderer.invoke(IPC.appRendererReady),

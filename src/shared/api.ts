@@ -41,10 +41,18 @@ export interface ReadFileResult {
 export interface WriteFileOptions {
   /** The mtime the renderer last saw. Null or undefined skips the check. */
   expectedMtimeMs?: number | null
+  /** The exact text this document accepted from disk, normalised to LF. */
+  expectedText?: string
   /** Write even though the file changed on disk since it was loaded. */
   force?: boolean
   /** Restored on write; defaults to LF for a document with no origin. */
   lineEnding?: LineEnding
+}
+
+export interface RenameFileResult {
+  path: string
+  /** The prior path if some local version history could not be moved. */
+  historyPath?: string
 }
 
 export type WriteFileResult =
@@ -78,7 +86,7 @@ export interface CloseRequestedEvent {
 }
 
 export interface RendererReadyResult {
-  /** Queued open-with paths from open-file / argv / second-instance. */
+  /** Opens from Finder, argv or a second launch, routed to this window. */
   pendingPaths: OpenPathEvent[]
   /** What this particular window should restore. */
   session: WindowSession
@@ -137,7 +145,7 @@ export interface MarkdownApi {
      * Renames within the same directory. `name` is a basename, not a path;
      * a markdown extension is enforced. Resolves the new absolute path.
      */
-    rename(path: string, name: string): Promise<string>
+    rename(path: string, name: string): Promise<RenameFileResult>
   }
 
   folder: {
@@ -175,6 +183,23 @@ export interface MarkdownApi {
     isFullScreen(): Promise<boolean>
     /** Sets title, represented filename (proxy icon) and the edited dot. */
     setDocument(info: DocumentInfo): Promise<void>
+    /** A routed open finished, successfully or not; frees the window for the next. */
+    settleOpen(): Promise<void>
+    /**
+     * Brings forward another window already showing this file. Resolves true
+     * when one did, in which case this window should not open it as well.
+     */
+    revealDocument(path: string): Promise<boolean>
+    /**
+     * Ends the claim revealDocument made when it resolved false, once this
+     * window has finished opening the path, or failed, or been cancelled.
+     */
+    releaseDocument(path: string): Promise<void>
+    /**
+     * Declines a routed open because this window holds unsaved edits main
+     * had not heard about yet; main sends the file to another window.
+     */
+    rerouteOpen(path: string): Promise<void>
   }
 
   app: {

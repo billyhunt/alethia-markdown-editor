@@ -7,13 +7,26 @@ const host = vi.hoisted(() => ({
   fs: { readFile: vi.fn(), writeFile: vi.fn(), rename: vi.fn() },
   document: { watch: vi.fn(), unwatch: vi.fn() },
   recents: { add: vi.fn() },
+  window: { revealDocument: vi.fn(async () => false), releaseDocument: vi.fn(async () => undefined) },
 }))
 vi.mock('../../src/renderer/api.ts', () => ({ api: host, unwrapIpcError: String }))
-const buffer = vi.hoisted(() => ({ text: '' }))
+const buffer = vi.hoisted(() => ({
+  text: '',
+  filePath: null as string | null,
+  pathWhenTextSet: undefined as string | null | undefined,
+  events: [] as string[],
+}))
 vi.mock('../../src/renderer/editor/editorController.ts', () => ({
   editorController: {
     getText: () => buffer.text,
-    setDocument: (text: string) => { buffer.text = text },
+    setDocument: (text: string) => {
+      buffer.text = text
+      buffer.pathWhenTextSet = buffer.filePath
+    },
+    setFilePath: (filePath: string | null) => {
+      buffer.filePath = filePath
+      buffer.events.push('editor learns path')
+    },
   },
 }))
 
@@ -34,6 +47,58 @@ beforeEach(() => {
   workspace.setState({ folderRoot: '/test', notice: null })
   host.fs.readFile.mockResolvedValue({ content: '# Next\n', mtimeMs: 2, lineEnding: '\n' })
   host.dialog.confirmSaveChanges.mockResolvedValue('cancel')
+  buffer.events = []
+  host.document.watch.mockImplementation(async () => {
+    // Yield, as the real IPC round trip does: anything that should wait for
+    // main to know the document has to wait for this to settle.
+    await Promise.resolve()
+    buffer.events.push('main records document')
+  })
+})
+
+/**
+ * Main refuses a document's images unless it has recorded that document as
+ * open, and the image widget remembers a refusal as a failed image. So in
+ * every transition that gives the editor a new path, main has to hear about it
+ * first.
+ */
+describe('main learns the document before the editor can request its images', () => {
+  let lastPath: string | null
+  let unsubscribe: () => void
+  beforeEach(() => {
+    lastPath = docs.getState().filePath
+    unsubscribe = docs.subscribe((state) => {
+      if (state.filePath !== lastPath) {
+        lastPath = state.filePath
+        buffer.events.push('store publishes path')
+      }
+    })
+    return () => unsubscribe()
+  })
+
+  it('on open', async () => {
+    await openPath('/test/next.md')
+    expect(buffer.events.indexOf('main records document')).toBe(0)
+    expect(buffer.events).toContain('editor learns path')
+    expect(buffer.events).toContain('store publishes path')
+  })
+
+  it('on Save As', async () => {
+    host.dialog.saveAs.mockResolvedValue('/test/elsewhere.md')
+    host.fs.writeFile.mockResolvedValue({ ok: true, mtimeMs: 5 })
+    expect(await saveAs()).toBe(true)
+    expect(docs.getState().filePath).toBe('/test/elsewhere.md')
+    expect(buffer.events[0]).toBe('main records document')
+    expect(buffer.events).toContain('store publishes path')
+  })
+
+  it('on rename of the open file', async () => {
+    host.fs.rename.mockResolvedValue({ path: '/test/renamed.md' })
+    await renameFile(file, 'renamed.md')
+    expect(docs.getState().filePath).toBe('/test/renamed.md')
+    expect(buffer.events[0]).toBe('main records document')
+    expect(buffer.events).toContain('store publishes path')
+  })
 })
 
 describe('intentional deletion of the open file', () => {
@@ -50,6 +115,10 @@ describe('intentional deletion of the open file', () => {
     expect(host.dialog.confirmSaveChanges).not.toHaveBeenCalled()
     expect(docs.getState().filePath).toBe(next)
     expect(buffer.text).toBe('# Next\n')
+    // The editor builds image URLs from the path during setDocument, so the
+    // path has to be known first; otherwise the new note's images are briefly
+    // requested against the previous note's folder.
+    expect(buffer.pathWhenTextSet).toBe(next)
   })
 
   it('preserves edits made just before deletion, even before the dirty flag updates', async () => {
@@ -117,23 +186,26 @@ describe('intentional deletion of the open file', () => {
 })
 
 describe('opening while document watch is pending', () => {
-  it('updates document identity before awaiting the new watch', async () => {
+  it('publishes the path and its document ID together once main has recorded the document', async () => {
     let finish!: (id: string) => void
     host.document.watch.mockReturnValue(new Promise<string>(resolve => { finish = resolve }))
+    const seen: Array<{ filePath: string | null; documentId: string | null }> = []
+    const unsubscribe = docs.subscribe(({ filePath, documentId }) => seen.push({ filePath, documentId }))
     const opening = openPath(next)
-    await vi.waitFor(() => expect(docs.getState().filePath).toBe(next))
-    expect(buffer.text).toBe('# Next\n')
-    expect(docs.getState().documentId).toBeNull()
+    await vi.waitFor(() => expect(host.document.watch).toHaveBeenCalledWith(next))
+    expect(docs.getState().filePath).toBe(file)
     finish('next-doc-id')
     await opening
-    expect(docs.getState().documentId).toBe('next-doc-id')
+    unsubscribe()
+    expect(docs.getState()).toMatchObject({ filePath: next, documentId: 'next-doc-id' })
+    expect(seen.filter(state => state.filePath === next)).toEqual([{ filePath: next, documentId: 'next-doc-id' }])
   })
 
-  it('keeps the new document identity if watch setup fails', async () => {
+  it('does not switch documents if watch setup fails', async () => {
     host.document.watch.mockRejectedValue(new Error('watch failed'))
     await openPath(next)
-    expect(buffer.text).toBe('# Next\n')
-    expect(docs.getState()).toMatchObject({ filePath: next, documentId: null })
+    expect(buffer.text).toBe('# Saved\n')
+    expect(docs.getState()).toMatchObject({ filePath: file })
     expect(host.dialog.showError).toHaveBeenCalledWith({ title: 'Could not open file', message: 'Error: watch failed' })
   })
 })
@@ -148,18 +220,21 @@ it('preserves the current document ID when reloading that file after an external
 })
 
 describe('document IDs returned after a save or rename', () => {
-  it('drops the document ID synchronously when Save As changes the path', async () => {
+  it('never pairs the old document ID with the new path when Save As changes it', async () => {
     let finish!: (id: string) => void
     docs.setState({ documentId: 'old-file-id' })
+    const seen: Array<{ filePath: string | null; documentId: string | null }> = []
+    const unsubscribe = docs.subscribe(({ filePath, documentId }) => seen.push({ filePath, documentId }))
     host.dialog.saveAs.mockResolvedValue(next)
     host.fs.writeFile.mockResolvedValue({ ok: true, mtimeMs: 3 })
     host.document.watch.mockReturnValue(new Promise<string>(resolve => { finish = resolve }))
     const saving = saveAs()
     await vi.waitFor(() => expect(host.document.watch).toHaveBeenCalledWith(next))
-    expect(docs.getState()).toMatchObject({ filePath: next, documentId: null })
     finish('new-file-id')
     await saving
+    unsubscribe()
     expect(docs.getState()).toMatchObject({ filePath: next, documentId: 'new-file-id' })
+    expect(seen.filter(state => state.filePath === next).map(state => state.documentId)).not.toContain('old-file-id')
   })
 
   it('keeps the document ID while re-saving the same path', async () => {
@@ -189,7 +264,7 @@ describe('document IDs returned after a save or rename', () => {
 
   it('attaches a renamed file ID without resetting edits made during watch setup', async () => {
     let finish!: (id: string) => void
-    host.fs.rename.mockResolvedValue(next)
+    host.fs.rename.mockResolvedValue({ path: next })
     host.document.watch.mockReturnValue(new Promise<string>(resolve => { finish = resolve }))
     const renaming = renameFile(file, 'next.md')
     await vi.waitFor(() => expect(host.document.watch).toHaveBeenCalledWith(next))
@@ -204,7 +279,7 @@ describe('document IDs returned after a save or rename', () => {
 
   it('does not attach a renamed file ID after switching documents during watch setup', async () => {
     let finish!: (id: string) => void
-    host.fs.rename.mockResolvedValue(next)
+    host.fs.rename.mockResolvedValue({ path: next })
     host.document.watch.mockReturnValue(new Promise<string>(resolve => { finish = resolve }))
     const renaming = renameFile(file, 'next.md')
     await vi.waitFor(() => expect(host.document.watch).toHaveBeenCalledWith(next))

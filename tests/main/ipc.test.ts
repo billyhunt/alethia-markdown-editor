@@ -8,7 +8,9 @@ const native = vi.hoisted(() => ({
   handlers: new Map<string, (...args: any[]) => any>(),
   windows: [] as any[],
   showMessageBox: vi.fn(),
-  createWindow: vi.fn(),
+  route: vi.fn(),
+  raise: vi.fn(),
+  showing: null as unknown,
   sourcePath: '',
   dropToken: 'drop-token-1',
   showItemInFolder: vi.fn(),
@@ -23,8 +25,8 @@ vi.mock('electron', () => ({
 vi.mock('../../src/main/watcher.ts', () => ({
   watchDocument: vi.fn(), watchFolder: vi.fn(), unwatchDocument: vi.fn(), unwatchFolder: vi.fn(),
 }))
+vi.mock('../../src/main/openWith.ts', () => ({ route: native.route }))
 vi.mock('../../src/main/windows.ts', () => ({
-  createWindow: native.createWindow,
   documentForId: (_win: unknown, id: unknown) => id === 'document-1' ? native.sourcePath : null,
   dropTokenMatches: (_contents: unknown, token: unknown) => token === native.dropToken,
   issueDropToken: () => 'preload-token',
@@ -33,7 +35,8 @@ vi.mock('../../src/main/windows.ts', () => ({
   noteFolder: vi.fn(),
   setQuitting: vi.fn(),
   takeSession: vi.fn(() => ({ bounds: { width: 800, height: 600 }, folder: null, file: null })),
-  windowShowing: vi.fn(() => null),
+  windowShowing: vi.fn(() => native.showing),
+  raise: native.raise,
 }))
 import { registerIpcHandlers } from '../../src/main/ipc.ts'
 import { assertReadable, assertReadableDir, grantFile } from '../../src/main/paths.ts'
@@ -46,12 +49,15 @@ const invoke = (channel: string, ...args: unknown[]) =>
   Promise.resolve().then(() => native.handlers.get(channel)!({ sender: native.windows[0].webContents }, ...args))
 
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-ipc-'))
+  // Canonical, as main reports paths: the macOS temp dir is a symlink.
+  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-ipc-')))
   secret = path.join(root, 'secret.md')
   await fs.writeFile(secret, '# secret')
   native.sourcePath = path.join(root, 'source.md')
   await fs.writeFile(native.sourcePath, '# source')
-  native.createWindow.mockClear()
+  native.route.mockClear()
+  native.raise.mockClear()
+  native.showing = null
   native.windows = [{ id: 101, webContents: { id: 101 }, isDestroyed: () => false, isFullScreen: () => false, getNormalBounds: () => ({ width: 800, height: 600 }) }]
   native.showMessageBox.mockResolvedValue({ response: 1 })
   patchSettings({ recentFiles: [], windows: [] })
@@ -60,7 +66,7 @@ beforeEach(async () => {
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }) })
 
 it('opens a linked file through IPC, confirms its real symlink target, and grants only that file', async () => {
-  const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-linked-target-'))
+  const outside = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-linked-target-')))
   const realTarget = path.join(outside, 'real.md')
   const linkDir = path.join(root, 'notes')
   const linkPath = path.join(linkDir, 'secret.md')
@@ -75,7 +81,7 @@ it('opens a linked file through IPC, confirms its real symlink target, and grant
       message: expect.stringContaining('symbolic link'),
       detail: canonicalTarget,
     })
-    expect(native.createWindow).toHaveBeenCalledWith(expect.objectContaining({ folder: null, file: canonicalTarget }))
+    expect(native.route).toHaveBeenCalledWith({ path: canonicalTarget, kind: 'file' })
     await expect(assertReadable(canonicalTarget)).resolves.toBe(canonicalTarget)
     // The sibling in the same directory is NOT readable: the folder was never granted.
     const sibling = path.join(outside, 'sibling.md')
@@ -95,13 +101,23 @@ it('does not widen an already file-granted linked target to its folder', async (
   grantFile(await fs.realpath(other))
   await invoke(IPC.appOpenLinkedFile, './other.md', 'document-1')
   expect(native.showMessageBox).not.toHaveBeenCalled()
-  expect(native.createWindow).toHaveBeenCalledWith(expect.objectContaining({ folder: null }))
+  expect(native.route).toHaveBeenCalledWith({ path: await fs.realpath(other), kind: 'file' })
   await expect(assertReadable(neighbour)).rejects.toThrow(/EPERM/)
   expect(getSettings().windows).toEqual([])
 })
 
+it('raises the window already showing a linked file instead of opening another', async () => {
+  const other = path.join(root, 'other.md')
+  await fs.writeFile(other, '# other')
+  native.showing = { id: 202 }
+  await invoke(IPC.appOpenLinkedFile, './other.md', 'document-1')
+  expect(native.raise).toHaveBeenCalledWith(native.showing)
+  expect(native.route).not.toHaveBeenCalled()
+  expect(native.showMessageBox).not.toHaveBeenCalled()
+})
+
 it('refuses a symlink whose real target is not markdown', async () => {
-  const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-linked-target-'))
+  const outside = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-linked-target-')))
   const realTarget = path.join(outside, 'id_rsa')
   const linkDir = path.join(root, 'notes')
   await fs.writeFile(realTarget, 'private key')
@@ -110,7 +126,7 @@ it('refuses a symlink whose real target is not markdown', async () => {
   try {
     await expect(invoke(IPC.appOpenLinkedFile, './notes/harmless.md', 'document-1')).rejects.toThrow(/not markdown/)
     expect(native.showMessageBox).not.toHaveBeenCalled()
-    expect(native.createWindow).not.toHaveBeenCalled()
+    expect(native.route).not.toHaveBeenCalled()
   } finally {
     await fs.rm(outside, { recursive: true, force: true })
   }

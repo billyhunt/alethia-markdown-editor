@@ -1,0 +1,970 @@
+/*
+ * Alethia: a portable copy of the editor's visual language.
+ *
+ * Paper ground, ink, hard rules, one hot orange. See README.md in this folder
+ * for the reasoning behind every value; this file is the drop-in form.
+ *
+ * Layers, in order:
+ *   1. Fonts       bundled woff2 (latin subset), relative to this file
+ *   2. Tokens      the app's own custom-property names, plus a few additions
+ *   3. Base        page ground, selection
+ *   4. Chrome      .al-* components: titlebar, tabs, rows, buttons, bars
+ *   5. Prose       .al-prose: semantic HTML set the way the editor renders it
+ *   6. Code        token colours for CodeMirror (tok-*), highlight.js, Prism
+ *   7. Print       monochrome, for thermal and laser printers alike
+ *
+ * Scope: nothing here applies until an element opts in. Tokens, colour-scheme
+ * and theme live on `.al-page`, `.al-prose` or `[data-al-theme]` (any of
+ * them may be <html>, <body> or a wrapper div); loading this file on a page
+ * that has none of those changes nothing on it. Only the outermost scope
+ * defines tokens, so nested ones inherit its theme.
+ *
+ * Theme: follows prefers-color-scheme. Force one with data-al-theme="light"
+ * or data-al-theme="dark" on the wrapper (or any element inside it).
+ */
+
+/* 1. Fonts ---------------------------------------------------------------- */
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/archivo-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('fonts/archivo-latin-600-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Archivo Black';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/archivo-black-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/dm-mono-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('fonts/dm-mono-latin-500-normal.woff2') format('woff2');
+}
+
+/* 2. Tokens --------------------------------------------------------------- */
+
+/* Tokens are defined on the outermost scope element only: the first of
+   .al-page, .al-prose or [data-al-theme] on the way down from the root, so a
+   .al-prose inside .al-page inherits the page's theme instead of resetting it.
+   An explicit data-al-theme="light" or "dark" always wins on its own element.
+   :where() keeps the light base at zero specificity so the theme rules beat
+   it without !important. */
+:where(
+    :is(.al-page, .al-prose, [data-al-theme]):not(
+        :is(.al-page, .al-prose, [data-al-theme]) *
+      )
+  ),
+:where([data-al-theme='light']) {
+  /* Ground and ink. */
+  --bg: #f2f0eb;
+  --text: #111111;
+  --text-muted: #5f5c55;
+  --border: #111111;
+
+  /* The spot colour. --accent is the readable one on the current ground;
+     --accent-hot is the signal orange, used only as a fill under ink or as
+     text on black. */
+  --accent: #b52900;
+  --accent-hot: #ff3b00;
+  /* Text set on a fill. Ink on hot is fixed in both themes; text on
+     --accent flips because --accent itself flips. */
+  --on-hot: #111111;
+  --on-accent: #f2f0eb;
+
+  --selection: #f5e0d6;
+
+  /* The code well is black in both themes. */
+  --code-bg: #111111;
+  --code-fg: #f2f0eb;
+  --code-keyword: #ff3b00;
+  --code-number: #ff3b00;
+  --code-property: #ff3b00;
+  --code-type: #ff9166;
+  --code-string: #d8cfc0;
+  --code-function: #f2f0eb;
+  --code-comment: #8a8780;
+  --code-operator: #8a8780;
+
+  /* Faces. */
+  --font-prose: 'Archivo', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: 'Archivo Black', 'Archivo', Impact, system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+
+  /* Rules: the four weights of line the system uses. */
+  --rule-thin: 2px;   /* control borders, table cells, toolbar dividers */
+  --rule: 3px;        /* structural: panes, bars, tabs */
+  --rule-heavy: 6px;  /* horizontal rule in prose */
+  --rule-slab: 8px;   /* blockquote slab */
+
+  /* Layout. */
+  --titlebar-h: 38px;
+  --sidebar-w: 260px;
+  --measure: 46rem;
+  --leading: 1.65;
+  /* One empty line of body text: the gap between blocks. */
+  --gap: 1.65rem;
+
+  /* Chrome type sizes (all DM Mono). */
+  --size-micro: 0.62rem;
+  --size-label: 0.66rem;
+  --size-ui: 0.7rem;
+  --size-note: 0.72rem;
+  --size-row: 0.75rem;
+  --size-panel: 0.78rem;
+
+  color-scheme: light;
+}
+
+/* Dark inverts the paper rather than softening it. */
+@media (prefers-color-scheme: dark) {
+  :where(
+      :is(.al-page, .al-prose, [data-al-theme]):not(
+          :is(.al-page, .al-prose, [data-al-theme]) *
+        )
+    ):not([data-al-theme='light']) {
+    --bg: #111111;
+    --text: #f2f0eb;
+    --text-muted: #a3a099;
+    --border: #f2f0eb;
+    --accent: #ff5722;
+    --on-accent: #111111;
+    --selection: #4a2418;
+    --code-bg: #000000;
+    color-scheme: dark;
+  }
+}
+
+[data-al-theme='dark'] {
+  --bg: #111111;
+  --text: #f2f0eb;
+  --text-muted: #a3a099;
+  --border: #f2f0eb;
+  --accent: #ff5722;
+  --on-accent: #111111;
+  --selection: #4a2418;
+  --code-bg: #000000;
+  color-scheme: dark;
+}
+
+/* 3. Base ----------------------------------------------------------------- */
+
+.al-page,
+.al-page *,
+.al-page *::before,
+.al-page *::after {
+  box-sizing: border-box;
+}
+
+.al-page {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-prose);
+  -webkit-font-smoothing: antialiased;
+}
+
+.al-page ::selection {
+  background: var(--selection);
+}
+
+/* Keyboard focus: a hard accent outline, never a glow. */
+.al-page :focus-visible {
+  outline: var(--rule-thin) solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 4. Chrome --------------------------------------------------------------- */
+
+/* Mono label voice: the default for every piece of chrome. */
+.al-label {
+  font-family: var(--font-mono);
+  font-size: var(--size-label);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Titlebar: an inverted band. */
+.al-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--titlebar-h);
+  padding: 0 0.75rem;
+  background: var(--border);
+  color: var(--bg);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.al-titlebar-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--size-note);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Unsaved or pending state: a hot square, never a soft dot. */
+.al-dirty {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: var(--accent-hot);
+}
+
+.al-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.al-icon-button:hover {
+  background: var(--accent-hot);
+  color: var(--on-hot);
+}
+
+/* Tabs: equal cells under a structural rule; the active one inverts. */
+.al-tabs {
+  display: flex;
+  border-bottom: var(--rule) solid var(--border);
+}
+
+.al-tabs > button,
+.al-tabs > a {
+  flex: 1;
+  padding: 0.55rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--size-label);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.al-tabs > .is-active,
+.al-tabs > [aria-selected='true'],
+.al-tabs > [aria-current='page'] {
+  background: var(--border);
+  color: var(--bg);
+}
+
+/* Rows: lists of files, outline entries, versions, settings. */
+.al-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.3rem 0.6rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--size-row);
+  letter-spacing: 0.02em;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.al-row:hover {
+  background: var(--selection);
+}
+
+.al-row.is-current,
+.al-row[aria-current='true'],
+.al-row[aria-current='page'] {
+  background: var(--accent-hot);
+  color: var(--on-hot);
+  font-weight: 500;
+}
+
+.al-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.al-row-meta {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.al-row.is-current .al-row-meta {
+  color: inherit;
+}
+
+.al-row-dir {
+  color: var(--text-muted);
+}
+
+/* Empty and explanatory states: muted mono, full sentences. */
+.al-empty {
+  padding: 1rem 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--size-note);
+  letter-spacing: 0.02em;
+}
+
+/* Button: an outlined slab that inverts on hover. */
+.al-button {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  border: var(--rule-thin) solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--size-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.al-button:hover {
+  background: var(--border);
+  color: var(--bg);
+}
+
+.al-button:disabled {
+  border-style: dashed;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: default;
+}
+
+/* Text input: square, thin rule, accent rule while editing. */
+.al-input {
+  border: var(--rule-thin) solid var(--border);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--size-row);
+  padding: 1px 4px;
+  outline: none;
+}
+
+.al-input:focus {
+  border-color: var(--accent);
+}
+
+/* Toolbar: a strip of mono glyph buttons, groups split by a thin rule. */
+.al-toolbar {
+  display: flex;
+  align-items: stretch;
+  border-bottom: var(--rule) solid var(--border);
+  background: var(--bg);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.al-toolbar-group {
+  display: flex;
+  align-items: stretch;
+}
+
+.al-toolbar-rule {
+  width: var(--rule-thin);
+  margin: 0.35rem 0.4rem;
+  background: var(--border);
+}
+
+.al-toolbar-button {
+  min-width: 2.1rem;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--size-ui);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.al-toolbar-button:hover {
+  background: var(--accent-hot);
+  color: var(--on-hot);
+}
+
+.al-toolbar-button:active,
+.al-toolbar-button[aria-pressed='true'] {
+  background: var(--border);
+  color: var(--bg);
+}
+
+/* Banner: a hot band for things that need a decision. */
+.al-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  background: var(--accent-hot);
+  color: var(--on-hot);
+  border-bottom: var(--rule) solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--size-note);
+  letter-spacing: 0.02em;
+}
+
+.al-banner-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+}
+
+.al-banner .al-button {
+  border-color: var(--on-hot);
+  color: var(--on-hot);
+}
+
+.al-banner .al-button:hover {
+  background: var(--on-hot);
+  color: var(--accent-hot);
+}
+
+/* Pin: a smaller hot strip that scopes a panel to one thing. */
+.al-pin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  background: var(--accent-hot);
+  color: var(--on-hot);
+  font-family: var(--font-mono);
+  font-size: var(--size-ui);
+}
+
+.al-pin > button {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--on-hot);
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* Status bar: counts on the left, identity in accent on the right. */
+.al-statusbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4rem 1rem;
+  border-top: var(--rule) solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--size-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.al-statusbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--accent);
+}
+
+/* Badge: a mode that is on. Inverted, square, no border. */
+.al-badge {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  background: var(--border);
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--size-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Panes: two columns divided by a structural rule. */
+.al-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+}
+
+.al-shell > .al-titlebar {
+  grid-column: 1 / -1;
+}
+
+.al-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: var(--rule) solid var(--border);
+  overflow: hidden;
+}
+
+.al-sidebar-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 0.25rem 0 1rem;
+}
+
+.al-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.al-main > .al-scroll {
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+/* Focus mode: everything outside the current block recedes. */
+.al-dim {
+  opacity: 0.25;
+  transition: opacity 0.2s ease;
+}
+
+/* 5. Prose ---------------------------------------------------------------- */
+
+.al-prose {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 2.5rem 2rem;
+  color: var(--text);
+  font-family: var(--font-prose);
+  font-size: 1rem;
+  line-height: var(--leading);
+  caret-color: var(--accent);
+}
+
+/* Blocks are separated by one empty line of body text, as in the editor. */
+.al-prose > * {
+  margin-top: 0;
+  margin-bottom: var(--gap);
+}
+
+.al-prose > :last-child {
+  margin-bottom: 0;
+}
+
+.al-prose :is(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.al-prose h1 { font-size: 2.3em; }
+.al-prose h2 { font-size: 1.55em; }
+.al-prose h3 { font-size: 1.2em; }
+.al-prose h4 { font-size: 1.02em; letter-spacing: 0; }
+
+/* Below h4 the display face stops reading as a heading; switch to the label
+   voice. */
+.al-prose :is(h5, h6) {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  line-height: 1.5;
+  text-transform: none;
+}
+
+.al-prose h6 {
+  color: var(--text-muted);
+}
+
+.al-prose :is(strong, b) {
+  font-weight: 600;
+  box-shadow: inset 0 -3px 0 var(--accent-hot);
+}
+
+.al-prose :is(em, i) {
+  font-style: italic;
+}
+
+.al-prose :is(del, s) {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+.al-prose :not(pre) > code {
+  padding: 0.05em 0.3em;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+/* Links are filled, not underlined. */
+.al-prose a {
+  padding: 0 0.2em;
+  background: var(--accent-hot);
+  color: var(--on-hot);
+  text-decoration: none;
+}
+
+.al-prose a:hover {
+  background: var(--border);
+  color: var(--bg);
+}
+
+.al-prose hr {
+  height: 0;
+  border: none;
+  border-top: var(--rule-heavy) solid var(--border);
+}
+
+/* Blockquote: a slab rule and the display face. */
+.al-prose blockquote {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 1em;
+  border-left: var(--rule-slab) solid var(--border);
+  font-family: var(--font-display);
+  font-size: 1.05em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.al-prose blockquote > * {
+  margin: 0;
+}
+
+.al-prose blockquote > * + * {
+  margin-top: 0.5em;
+}
+
+/* Lists hang their markers in a 1.6em gutter. */
+.al-prose :is(ul, ol) {
+  padding-left: 0;
+  list-style: none;
+}
+
+.al-prose :is(ul, ol) :is(ul, ol) {
+  margin: 0;
+}
+
+.al-prose li {
+  position: relative;
+  padding-left: 1.6em;
+}
+
+.al-prose ul > li::before {
+  content: '▪';
+  position: absolute;
+  left: 0;
+  width: 1.6em;
+  color: var(--accent);
+  font-size: 0.8em;
+  line-height: calc(var(--leading) / 0.8);
+}
+
+/* Square bullets alternate filled and open by depth. */
+.al-prose ul ul > li::before { content: '▫'; }
+.al-prose ul ul ul > li::before { content: '▪'; }
+.al-prose ul ul ul ul > li::before { content: '▫'; }
+
+.al-prose ol {
+  counter-reset: al-ol;
+}
+
+.al-prose ol > li {
+  counter-increment: al-ol;
+}
+
+.al-prose ol > li::before {
+  content: counter(al-ol) '.';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  font-weight: 500;
+  line-height: calc(var(--leading) / 0.85);
+}
+
+/* Task lists keep their bullet, then a plain checkbox in accent; done items
+   strike and recede. */
+.al-prose li > input[type='checkbox'] {
+  margin: 0 0.4em 0 0;
+  vertical-align: baseline;
+  accent-color: var(--accent);
+}
+
+.al-prose li:has(> input[type='checkbox']:checked) {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Fenced code: a solid black slab, square, with its language set top right
+   in hot mono caps. Put the language in data-lang. */
+.al-prose pre {
+  overflow-x: auto;
+  padding: 0.5em 1em;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  line-height: var(--leading);
+}
+
+.al-prose pre[data-lang]::before {
+  content: attr(data-lang);
+  display: block;
+  text-align: right;
+  color: var(--accent-hot);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.al-prose pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+/* Tables: heavy cell rules, inverted head, mono throughout. */
+.al-prose table {
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+
+.al-prose :is(th, td) {
+  padding: 0.35em 0.8em;
+  border: var(--rule-thin) solid var(--border);
+  text-align: left;
+}
+
+.al-prose :is(th, td)[align='right'] { text-align: right; }
+.al-prose :is(th, td)[align='center'] { text-align: center; }
+
+.al-prose th {
+  background: var(--border);
+  color: var(--bg);
+  font-size: 0.85em;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Bold in a cell fills the whole cell; a chip inside a cell reads as a
+   mistake. */
+.al-prose td:has(strong) {
+  background: var(--accent-hot);
+  color: var(--on-hot);
+}
+
+.al-prose td strong {
+  font-weight: 500;
+  box-shadow: none;
+}
+
+/* Images sit inline with the text, capped so one photo is not the whole
+   screen, and ruled like everything else. As in the editor (PR #42). */
+.al-prose img {
+  display: inline-block;
+  max-width: 100%;
+  max-height: 60vh;
+  vertical-align: middle;
+  border: var(--rule) solid var(--border);
+}
+
+.al-prose .al-math-block {
+  display: block;
+  padding: 0.3em 0;
+  text-align: center;
+}
+
+/* YAML front matter, or any metadata block: muted mono behind a thin rule. */
+.al-prose .al-frontmatter {
+  padding-left: 0.8em;
+  border-left: 3px solid var(--text-muted);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  letter-spacing: 0.04em;
+  white-space: pre-wrap;
+}
+
+/* 6. Code tokens ---------------------------------------------------------- */
+
+/* Scoped like everything else: a host page's own .token or .hljs-* classes are
+   left alone unless they sit inside an Alethia wrapper. Nested rules, so the
+   scope is written once. */
+:where(.al-page, .al-prose, [data-al-theme]) {
+  /* CodeMirror / Lezer classHighlighter */
+  .tok-keyword { color: var(--code-keyword); }
+  .tok-string, .tok-string2 { color: var(--code-string); }
+  .tok-comment { color: var(--code-comment); font-style: italic; }
+  .tok-number, .tok-bool, .tok-atom { color: var(--code-number); }
+  .tok-typeName, .tok-className, .tok-namespace { color: var(--code-type); }
+  .tok-operator, .tok-punctuation { color: var(--code-operator); }
+  .tok-propertyName { color: var(--code-property); }
+  .tok-variableName { color: var(--code-fg); }
+  .tok-variableName.tok-definition { color: var(--code-function); }
+
+  /* highlight.js */
+  .hljs-keyword, .hljs-built_in, .hljs-literal { color: var(--code-keyword); }
+  .hljs-string, .hljs-regexp { color: var(--code-string); }
+  .hljs-comment, .hljs-quote { color: var(--code-comment); font-style: italic; }
+  .hljs-number { color: var(--code-number); }
+  .hljs-title.function_, .hljs-title { color: var(--code-function); }
+  .hljs-type, .hljs-title.class_ { color: var(--code-type); }
+  .hljs-operator, .hljs-punctuation { color: var(--code-operator); }
+  .hljs-attr, .hljs-property { color: var(--code-property); }
+  .hljs-variable, .hljs-params { color: var(--code-fg); }
+
+  /* Prism */
+  .token.keyword, .token.boolean { color: var(--code-keyword); }
+  .token.string, .token.char, .token.regex { color: var(--code-string); }
+  .token.comment { color: var(--code-comment); font-style: italic; }
+  .token.number, .token.constant { color: var(--code-number); }
+  .token.function { color: var(--code-function); }
+  .token.class-name, .token.builtin { color: var(--code-type); }
+  .token.operator, .token.punctuation { color: var(--code-operator); }
+  .token.property, .token.attr-name { color: var(--code-property); }
+  .token.variable { color: var(--code-fg); }
+}
+
+/* 7. Print ---------------------------------------------------------------- */
+
+@media print {
+  /* The one rule in this file that cannot be scoped: @page belongs to the
+     document being printed, not to an element. The same margins as the app. */
+  @page {
+    margin: 18mm 16mm;
+  }
+
+  /* Fills are load-bearing in this design, so they have to survive. */
+  .al-page,
+  .al-page * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Chrome has no meaning on paper. */
+  .al-titlebar,
+  .al-sidebar,
+  .al-toolbar,
+  .al-statusbar,
+  .al-banner {
+    display: none !important;
+  }
+
+  /* Paper is white and the orange goes black: on a monochrome device the
+     cream dithers and the orange lands a muddy mid-grey. !important so the
+     print palette wins over a dark-mode or data-al-theme override. */
+  .al-page,
+  .al-prose,
+  [data-al-theme] {
+    --bg: #ffffff !important;
+    --text: #000000 !important;
+    --text-muted: #555555 !important;
+    --border: #000000 !important;
+    --accent: #000000 !important;
+    --accent-hot: #000000 !important;
+    --on-hot: #ffffff !important;
+    --on-accent: #ffffff !important;
+    --code-bg: #000000 !important;
+    --code-fg: #ffffff !important;
+    --code-keyword: #ffffff !important;
+    --code-number: #ffffff !important;
+    --code-property: #ffffff !important;
+    --code-type: #ffffff !important;
+    --code-function: #ffffff !important;
+    --code-string: #d0d0d0 !important;
+    --code-comment: #b0b0b0 !important;
+    --code-operator: #b0b0b0 !important;
+  }
+
+  .al-prose {
+    max-width: none;
+    padding: 0;
+  }
+
+  .al-dim {
+    opacity: 1 !important;
+  }
+
+  /* The hot label would go black on the black slab; knock it out instead. */
+  .al-prose pre[data-lang]::before {
+    color: #ffffff;
+  }
+
+  /* An inline run of solid black is hard to read at body size, so links and
+     inline code are ruled rather than filled. */
+  .al-prose a {
+    padding: 0;
+    background: transparent;
+    color: #000000;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+  }
+
+  .al-prose :not(pre) > code {
+    background: transparent;
+    color: #000000;
+    border: 1px solid #000000;
+  }
+
+  .al-prose :is(h1, h2, h3, h4, h5, h6) {
+    break-after: avoid;
+  }
+
+  .al-prose :is(table, pre, blockquote) {
+    break-inside: avoid;
+  }
+}
