@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Alethia — style specimen</title>
+    <link rel="icon" href="assets/alethia-icon.svg" />
+    <link rel="stylesheet" href="alethia.css" />
+    <style>
+      /* Specimen-page layout only. Everything visual comes from alethia.css. */
+      .sg-wrap { max-width: 72rem; margin: 0 auto; padding: 0 2rem 6rem; }
+      .sg-section { padding: 3rem 0; border-top: var(--rule) solid var(--border); }
+      .sg-section > header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 2rem; }
+      .sg-num { font-family: var(--font-mono); font-size: var(--size-ui); letter-spacing: 0.16em; color: var(--accent); }
+      .sg-h { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 1.55rem; letter-spacing: -0.02em; line-height: 1.05; text-transform: uppercase; }
+      .sg-lede { max-width: 46rem; margin: 0 0 2rem; line-height: 1.65; }
+      .sg-cover { padding: 5rem 0 3rem; display: grid; grid-template-columns: 1fr auto; gap: 2rem; align-items: end; }
+      .sg-cover h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(3rem, 10vw, 7.5rem); line-height: 0.9; letter-spacing: -0.03em; text-transform: uppercase; }
+      .sg-cover p { margin: 1.5rem 0 0; max-width: 34rem; line-height: 1.65; }
+      .sg-cover img { width: 9rem; height: 9rem; }
+      .sg-grid { display: grid; gap: 0; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); border-top: var(--rule-thin) solid var(--border); border-left: var(--rule-thin) solid var(--border); }
+      .sg-swatch { border-right: var(--rule-thin) solid var(--border); border-bottom: var(--rule-thin) solid var(--border); }
+      .sg-chip { height: 6rem; display: flex; align-items: flex-end; padding: 0.6rem; font-family: var(--font-mono); font-size: var(--size-ui); letter-spacing: 0.08em; text-transform: uppercase; }
+      .sg-meta { padding: 0.6rem; font-family: var(--font-mono); font-size: var(--size-ui); line-height: 1.6; }
+      .sg-meta b { display: block; font-weight: 500; letter-spacing: 0.06em; }
+      .sg-meta span { color: var(--text-muted); }
+      .sg-row { display: grid; grid-template-columns: 11rem 1fr; gap: 1.5rem; align-items: baseline; padding: 1rem 0; border-bottom: var(--rule-thin) solid var(--border); }
+      .sg-row > :first-child { font-family: var(--font-mono); font-size: var(--size-ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+      .sg-face { font-size: 2.6rem; line-height: 1.1; }
+      .sg-rule { height: 0; border-top-style: solid; border-top-color: var(--border); }
+      .sg-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 2rem; }
+      .sg-demo { border: var(--rule-thin) solid var(--border); }
+      .sg-demo-label { padding: 0.4rem 0.6rem; border-bottom: var(--rule-thin) solid var(--border); font-family: var(--font-mono); font-size: var(--size-label); letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+      .sg-demo-body { padding: 1rem; display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+      .sg-window { border: var(--rule) solid var(--border); height: 44rem; display: grid; grid-template-rows: var(--titlebar-h) 1fr; overflow: hidden; }
+      .sg-window .al-shell { grid-template-rows: 1fr; min-height: 0; }
+      .sg-window .al-titlebar { padding-left: 0.75rem; }
+      .sg-lights { display: inline-flex; gap: 8px; margin-right: 2.5rem; }
+      .sg-lights i { width: 12px; height: 12px; border-radius: 50%; background: var(--text-muted); }
+      .sg-dont { opacity: 0.9; }
+      .sg-dont .sg-demo-label { color: var(--accent); }
+      .sg-theme { margin-left: auto; display: flex; border: var(--rule-thin) solid var(--bg); }
+      .sg-theme button { border: none; background: transparent; color: var(--bg); font-family: var(--font-mono); font-size: var(--size-label); letter-spacing: 0.1em; text-transform: uppercase; padding: 0.3rem 0.6rem; cursor: pointer; }
+      .sg-theme button[aria-pressed='true'] { background: var(--bg); color: var(--text); }
+      .sg-sticky { position: sticky; top: 0; z-index: 10; }
+      @media print { .sg-sticky, .sg-theme { display: none; } .sg-window { height: auto; } }
+    </style>
+  </head>
+  <body class="al-page">
+    <div class="al-titlebar sg-sticky">
+      <span class="al-titlebar-name">Alethia — style specimen <span class="al-dirty" aria-hidden="true"></span></span>
+      <div class="sg-theme" role="group" aria-label="Theme">
+        <button type="button" data-set-theme="auto" aria-pressed="true">Auto</button>
+        <button type="button" data-set-theme="light" aria-pressed="false">Light</button>
+        <button type="button" data-set-theme="dark" aria-pressed="false">Dark</button>
+      </div>
+    </div>
+
+    <main class="sg-wrap">
+      <section class="sg-cover">
+        <div>
+          <span class="sg-num">ἀλήθεια · 0.1.0-alpha.1</span>
+          <h1>Alethia</h1>
+          <p>
+            Paper ground, hard black rules, one hot orange. Nothing is softened, nothing is
+            hidden: emphasis is a fill, structure is a rule, and the chrome speaks in small mono
+            capitals.
+          </p>
+        </div>
+        <img src="assets/alethia-icon.svg" alt="The Alethia app icon: a black alpha in an orange tile" />
+      </section>
+
+      <!-- 01 COLOUR -->
+      <section class="sg-section" id="colour">
+        <header><span class="sg-num">01</span><h2 class="sg-h">Colour</h2></header>
+        <p class="sg-lede">
+          Two neutrals and one spot colour. Swatches below follow the current theme, so switch it
+          in the titlebar to see each token's dark value. Contrast is measured against the ground
+          the token is actually used on.
+        </p>
+        <div class="sg-grid">
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--bg); color: var(--text)">--bg</div><div class="sg-meta"><b>Paper / Ink</b><span>#f2f0eb · dark #111111</span><br />Ground</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--text); color: var(--bg)">--text</div><div class="sg-meta"><b>Ink / Paper</b><span>#111111 · dark #f2f0eb</span><br />16.58:1 on ground</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--text-muted); color: var(--bg)">--text-muted</div><div class="sg-meta"><b>Stone</b><span>#5f5c55 · dark #a3a099</span><br />5.86:1 · dark 7.23:1</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--border); color: var(--bg)">--border</div><div class="sg-meta"><b>Rule / Band</b><span>#111111 · dark #f2f0eb</span><br />Rules and inverted bands</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--accent-hot); color: var(--on-hot)">--accent-hot</div><div class="sg-meta"><b>Hot</b><span>#ff3b00 · both</span><br />Fill under ink 5.29:1</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--accent); color: var(--on-accent)">--accent</div><div class="sg-meta"><b>Rust / Hot light</b><span>#b52900 · dark #ff5722</span><br />Text 5.62:1 · dark 5.97:1</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--selection); color: var(--text)">--selection</div><div class="sg-meta"><b>Blush / Ember</b><span>#f5e0d6 · dark #4a2418</span><br />Selection, row hover</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--code-bg); color: var(--code-fg)">--code-bg</div><div class="sg-meta"><b>Code well</b><span>#111111 · dark #000000</span><br />Always black</div></div>
+        </div>
+
+        <div class="sg-pair" style="margin-top: 2rem">
+          <div class="sg-demo">
+            <div class="sg-demo-label">Do · orange as a fill, ink on it</div>
+            <div class="sg-demo-body">
+              <span class="al-row is-current" style="width: auto">showcase.md</span>
+              <span class="al-banner" style="border: none">This file changed on disk.</span>
+            </div>
+          </div>
+          <div class="sg-demo sg-dont">
+            <div class="sg-demo-label">Don't · hot orange as text on paper (3.14:1)</div>
+            <div class="sg-demo-body">
+              <span style="color: #ff3b00; font-family: var(--font-mono); font-size: var(--size-row)">showcase.md · unsaved</span>
+              <span style="color: var(--accent); font-family: var(--font-mono); font-size: var(--size-row)">← use --accent instead</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 02 TYPE -->
+      <section class="sg-section" id="type">
+        <header><span class="sg-num">02</span><h2 class="sg-h">Type</h2></header>
+        <p class="sg-lede">
+          Three voices, never mixed within a role. Archivo carries reading. Archivo Black shouts,
+          always in capitals. DM Mono labels everything that is not content.
+        </p>
+        <div class="sg-row"><span>Display · Archivo Black 400</span><span class="sg-face" style="font-family: var(--font-display); text-transform: uppercase; letter-spacing: -0.02em">Write it down</span></div>
+        <div class="sg-row"><span>Prose · Archivo 400 / 600</span><span class="sg-face" style="font-family: var(--font-prose)">The source is always here <strong style="font-weight: 600">and bold</strong></span></div>
+        <div class="sg-row"><span>Mono · DM Mono 400 / 500</span><span class="sg-face" style="font-family: var(--font-mono)">alpha.md · 710B</span></div>
+
+        <div class="al-prose" style="max-width: none; padding: 2rem 0 0; margin: 0">
+          <div class="sg-row"><span>h1 · 2.3em</span><h1 style="margin: 0">Field notes</h1></div>
+          <div class="sg-row"><span>h2 · 1.55em</span><h2 style="margin: 0">Today</h2></div>
+          <div class="sg-row"><span>h3 · 1.2em</span><h3 style="margin: 0">Intake</h3></div>
+          <div class="sg-row"><span>h4 · 1.02em</span><h4 style="margin: 0">Owners and days</h4></div>
+          <div class="sg-row"><span>h5 · mono 0.85em</span><h5 style="margin: 0">Section label</h5></div>
+          <div class="sg-row"><span>h6 · mono muted</span><h6 style="margin: 0">Quiet label</h6></div>
+          <div class="sg-row"><span>Body · 1rem / 1.65</span><p style="margin: 0">Rendering is a skin the caret peels back. Click into anything and its raw syntax reappears, then closes again when you leave.</p></div>
+        </div>
+
+        <div style="margin-top: 2rem">
+          <div class="sg-row"><span>Label · 0.66rem +0.1em</span><span class="al-label">95 words · 667 characters</span></div>
+          <div class="sg-row"><span>UI · 0.7rem +0.08em</span><span style="font-family: var(--font-mono); font-size: var(--size-ui); letter-spacing: 0.08em; text-transform: uppercase">Open folder…</span></div>
+          <div class="sg-row"><span>Note · 0.72rem +0.02em</span><span style="font-family: var(--font-mono); font-size: var(--size-note); letter-spacing: 0.02em">No earlier versions yet. One is kept each time a save replaces this file.</span></div>
+          <div class="sg-row"><span>Row · 0.75rem +0.02em</span><span style="font-family: var(--font-mono); font-size: var(--size-row); letter-spacing: 0.02em">header-table.md</span></div>
+        </div>
+      </section>
+
+      <!-- 03 RULES -->
+      <section class="sg-section" id="rules">
+        <header><span class="sg-num">03</span><h2 class="sg-h">Rules &amp; shape</h2></header>
+        <p class="sg-lede">
+          Structure is drawn, not shaded. Four line weights, square corners everywhere, no
+          shadows. Depth comes from inversion: a band of ink on paper, or paper on ink.
+        </p>
+        <div class="sg-row"><span>2px · thin</span><div class="sg-rule" style="border-top-width: 2px"></div></div>
+        <div class="sg-row"><span>3px · structural</span><div class="sg-rule" style="border-top-width: 3px"></div></div>
+        <div class="sg-row"><span>6px · heavy (hr)</span><div class="sg-rule" style="border-top-width: 6px"></div></div>
+        <div class="sg-row"><span>8px · slab (quote)</span><div style="height: 2.2rem; border-left: 8px solid var(--border)"></div></div>
+        <div class="sg-row"><span>Radius</span><span style="font-family: var(--font-mono); font-size: var(--size-row)">0. The app-icon mask is the only curve in the system.</span></div>
+      </section>
+
+      <!-- 04 COMPONENTS -->
+      <section class="sg-section" id="components">
+        <header><span class="sg-num">04</span><h2 class="sg-h">Chrome</h2></header>
+        <p class="sg-lede">
+          The editor window, rebuilt from the .al-* classes. Hover the rows, tabs and toolbar to
+          see the two interaction colours: hot fill for "pointing at", inversion for "pressed" or
+          "selected".
+        </p>
+
+        <div class="sg-window">
+          <div class="al-titlebar">
+            <span class="sg-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+            <button type="button" class="al-icon-button" aria-label="Toggle sidebar">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="9" y1="4" x2="9" y2="20" /></svg>
+            </button>
+            <span class="al-titlebar-name">showcase.md <span class="al-dirty" aria-label="Unsaved changes"></span></span>
+          </div>
+          <div class="al-shell">
+            <aside class="al-sidebar">
+              <div class="al-tabs" role="tablist">
+                <button type="button" role="tab" aria-selected="true">Files</button>
+                <button type="button" role="tab" aria-selected="false">Outline</button>
+                <button type="button" role="tab" aria-selected="false">History</button>
+              </div>
+              <div class="al-sidebar-body">
+                <button type="button" class="al-row" style="padding-left: 8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(90deg)"><polyline points="9 6 15 12 9 18" /></svg><span class="al-row-label al-row-dir">notes</span></button>
+                <button type="button" class="al-row" style="padding-left: 20px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18" /></svg><span class="al-row-label al-row-dir">nested</span></button>
+                <button type="button" class="al-row" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">alpha.md</span></button>
+                <button type="button" class="al-row" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">beta.md</span></button>
+                <button type="button" class="al-row is-current" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">showcase.md</span></button>
+                <button type="button" class="al-row" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">vtest.md</span></button>
+              </div>
+            </aside>
+            <div class="al-main">
+              <div class="al-toolbar" role="toolbar" aria-label="Formatting">
+                <div class="al-toolbar-group"><button type="button" class="al-toolbar-button">H1</button><button type="button" class="al-toolbar-button">H2</button><button type="button" class="al-toolbar-button">H3</button><button type="button" class="al-toolbar-button">¶</button></div>
+                <div class="al-toolbar-group"><span class="al-toolbar-rule" aria-hidden="true"></span><button type="button" class="al-toolbar-button" style="font-family: var(--font-display)">B</button><button type="button" class="al-toolbar-button" style="font-style: italic; font-weight: 600">I</button><button type="button" class="al-toolbar-button" style="text-decoration: line-through">S</button><button type="button" class="al-toolbar-button">`</button></div>
+                <div class="al-toolbar-group"><span class="al-toolbar-rule" aria-hidden="true"></span><button type="button" class="al-toolbar-button">LINK</button><button type="button" class="al-toolbar-button">QUOTE</button><button type="button" class="al-toolbar-button">BLOCK</button></div>
+                <div class="al-toolbar-group"><span class="al-toolbar-rule" aria-hidden="true"></span><button type="button" class="al-toolbar-button">LIST</button><button type="button" class="al-toolbar-button">1.</button><button type="button" class="al-toolbar-button">—</button></div>
+              </div>
+              <div class="al-banner" role="status">
+                <span>This file changed on disk since you loaded it.</span>
+                <span class="al-banner-actions"><button type="button" class="al-button">Overwrite</button><button type="button" class="al-button">Reload from disk</button></span>
+              </div>
+              <div class="al-scroll">
+                <article class="al-prose">
+                  <h1>Field notes</h1>
+                  <p>The source is always here. Rendering is a skin the caret peels back — click into anything and its <strong>raw syntax</strong> reappears.</p>
+                  <blockquote><p>Write it down before it becomes an opinion.</p></blockquote>
+                  <ul>
+                    <li><input type="checkbox" checked aria-label="Done" /> Draft the intake rules</li>
+                    <li><input type="checkbox" aria-label="Done" /> Check the <code>segment</code> boundaries
+                      <ul><li>Nested items keep their depth</li></ul>
+                    </li>
+                  </ul>
+                </article>
+              </div>
+              <footer class="al-statusbar">
+                <span>95 words · 667 characters</span>
+                <span class="al-statusbar-right"><span class="al-badge">Focus</span>showcase.md · unsaved</span>
+              </footer>
+            </div>
+          </div>
+        </div>
+
+        <div class="sg-pair" style="margin-top: 2rem">
+          <div class="sg-demo">
+            <div class="sg-demo-label">Buttons</div>
+            <div class="sg-demo-body">
+              <button type="button" class="al-button">Open folder…</button>
+              <button type="button" class="al-button">Dismiss</button>
+              <button type="button" class="al-button" disabled>Disabled</button>
+            </div>
+          </div>
+          <div class="sg-demo">
+            <div class="sg-demo-label">Input · rename in place</div>
+            <div class="sg-demo-body">
+              <input class="al-input" value="field-notes.md" aria-label="New name" />
+            </div>
+          </div>
+          <div class="sg-demo">
+            <div class="sg-demo-label">State marks</div>
+            <div class="sg-demo-body">
+              <span class="al-dirty" aria-label="Unsaved"></span>
+              <span class="al-badge">Focus</span>
+              <span class="al-badge">Typewriter</span>
+            </div>
+          </div>
+          <div class="sg-demo">
+            <div class="sg-demo-label">Pinned panel · history rows</div>
+            <div style="padding: 0.25rem 0">
+              <div class="al-pin"><span class="al-row-label">beta.md</span><button type="button">Clear</button></div>
+              <button type="button" class="al-row"><span class="al-row-label">46m ago</span><span class="al-row-meta">710B</span></button>
+              <button type="button" class="al-row"><span class="al-row-label">1h ago</span><span class="al-row-meta">702B</span></button>
+              <button type="button" class="al-row"><span class="al-row-label">2h ago</span><span class="al-row-meta">694B</span></button>
+            </div>
+          </div>
+          <div class="sg-demo">
+            <div class="sg-demo-label">Empty state</div>
+            <div class="al-empty">No folder open.<br /><br /><button type="button" class="al-button">Open folder…</button></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 05 PROSE -->
+      <section class="sg-section" id="prose">
+        <header><span class="sg-num">05</span><h2 class="sg-h">Prose</h2></header>
+        <p class="sg-lede">
+          Plain semantic HTML inside <code style="font-family: var(--font-mono)">.al-prose</code>,
+          set the way the editor renders markdown.
+        </p>
+        <article class="al-prose" style="margin: 0; padding: 0">
+          <h2>Today</h2>
+          <p>
+            Text is <strong>strong</strong>, <em>emphasised</em>, <del>struck</del>, or
+            <code>inline code</code>. A <a href="#prose">link is a filled label</a>, not an
+            underline.
+          </p>
+          <ol>
+            <li>Ordered markers are mono, in accent</li>
+            <li>They hang in the same 1.6em gutter as bullets
+              <ol><li>Nested numbering restarts</li></ol>
+            </li>
+          </ol>
+          <ul>
+            <li>Square bullets: filled</li>
+            <li>Then open at the next depth
+              <ul><li>And filled again below that</li></ul>
+            </li>
+          </ul>
+          <hr />
+          <table>
+            <thead><tr><th>Stage</th><th>Owner</th><th align="right">Days</th></tr></thead>
+            <tbody>
+              <tr><td>Intake</td><td><strong>Ops</strong></td><td align="right">3</td></tr>
+              <tr><td>Review</td><td>Agency</td><td align="right">6</td></tr>
+            </tbody>
+          </table>
+          <pre data-lang="ts"><code><span class="tok-keyword">export function</span> <span class="tok-variableName tok-definition">reveal</span><span class="tok-punctuation">(</span><span class="tok-variableName">node</span><span class="tok-punctuation">:</span> <span class="tok-typeName">SyntaxNode</span><span class="tok-punctuation">,</span> <span class="tok-variableName">caret</span><span class="tok-punctuation">:</span> <span class="tok-typeName">number</span><span class="tok-punctuation">):</span> <span class="tok-typeName">boolean</span> <span class="tok-punctuation">{</span>
+  <span class="tok-comment">// The document is the markdown; decorations are only a skin over it.</span>
+  <span class="tok-keyword">return</span> <span class="tok-variableName">caret</span> <span class="tok-operator">&gt;=</span> <span class="tok-variableName">node</span><span class="tok-punctuation">.</span><span class="tok-propertyName">from</span> <span class="tok-operator">&amp;&amp;</span> <span class="tok-variableName">caret</span> <span class="tok-operator">&lt;=</span> <span class="tok-variableName">node</span><span class="tok-punctuation">.</span><span class="tok-propertyName">to</span> <span class="tok-operator">&amp;&amp;</span> <span class="tok-string">'visible'</span> <span class="tok-operator">!==</span> <span class="tok-number">0</span>
+<span class="tok-punctuation">}</span></code></pre>
+          <div class="al-frontmatter">title: Field notes
+tags: [intake, ops]</div>
+        </article>
+      </section>
+
+      <!-- 06 MARK -->
+      <section class="sg-section" id="mark">
+        <header><span class="sg-num">06</span><h2 class="sg-h">Mark</h2></header>
+        <div class="sg-pair">
+          <div class="sg-demo">
+            <div class="sg-demo-label">App icon</div>
+            <div class="sg-demo-body"><img src="assets/alethia-icon.svg" alt="" width="128" height="128" /><img src="assets/alethia-icon.svg" alt="" width="64" height="64" /><img src="assets/alethia-icon.svg" alt="" width="32" height="32" /></div>
+          </div>
+          <div class="sg-demo">
+            <div class="sg-demo-label">Wordmark</div>
+            <div class="sg-demo-body" style="flex-direction: column; align-items: flex-start">
+              <span style="font-family: var(--font-display); font-size: 2.6rem; text-transform: uppercase; letter-spacing: -0.02em; line-height: 1">Alethia</span>
+              <span class="al-label" style="color: var(--text-muted)">ἀλήθεια · disclosure</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // Theme switch for the specimen only: alethia.css reads data-theme.
+      const buttons = document.querySelectorAll('[data-set-theme]')
+      for (const button of buttons) {
+        button.addEventListener('click', () => {
+          const theme = button.dataset.setTheme
+          if (theme === 'auto') delete document.documentElement.dataset.theme
+          else document.documentElement.dataset.theme = theme
+          for (const other of buttons) other.setAttribute('aria-pressed', String(other === button))
+        })
+      }
+      // Tabs and rows are inert in the specimen; keep clicks from scrolling.
+      document.querySelectorAll('.al-tabs [role="tab"]').forEach((tab, _i, all) => {
+        tab.addEventListener('click', () => all.forEach((t) => t.setAttribute('aria-selected', String(t === tab))))
+      })
+    </script>
+  </body>
+</html>
