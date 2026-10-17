@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -27,6 +28,12 @@ export class Sandbox {
   readonly root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'alethia-e2e-')))
   readonly profile = path.join(this.root, 'profile')
   readonly docs = path.join(this.root, 'docs')
+  /**
+   * The process of every app launched against this sandbox, so none outlives
+   * its test. Captured at launch: Playwright refuses `process()` on an app
+   * whose connection has already closed.
+   */
+  readonly processes: ChildProcess[] = []
 
   constructor() {
     fs.mkdirSync(this.profile)
@@ -55,6 +62,11 @@ export class Sandbox {
   }
 
   dispose(): void {
+    // A test that failed before quitting leaves its app running, and
+    // Playwright's own teardown can then wait on it for many minutes.
+    for (const child of this.processes) {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }
     // A just-closed app can still be flushing settings into the profile.
     fs.rmSync(this.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
@@ -67,7 +79,9 @@ export async function launch(sandbox: Sandbox, args: string[] = []): Promise<Ele
     // A dev-server URL in the environment would point the window at Vite.
     if (value !== undefined && key !== 'VITE_DEV_SERVER_URL') env[key] ??= value
   }
-  return electron.launch({ args: ['-r', RAISE_HOOK, MAIN, ...args], env, cwd: ROOT })
+  const app = await electron.launch({ args: ['-r', RAISE_HOOK, MAIN, ...args], env, cwd: ROOT })
+  sandbox.processes.push(app.process())
+  return app
 }
 
 const QUIT_TIMEOUT = 10_000
