@@ -94,9 +94,10 @@ Three processes, split under `src/`:
 | `src/shared/` | Both | Types and channel names, no runtime imports |
 
 **The editor** is CodeMirror 6. The document *is* the markdown text; rendering
-is a decoration layer over it. That means an untouched file round-trips
-byte-identical, and undo, IME and nested-language highlighting all keep working
-because nothing rewrites the buffer. `src/renderer/editor/extensions/` holds the
+is a decoration layer over it. That means an untouched file's document text
+round-trips unchanged, except that BOMs are stripped and mixed line endings are
+normalised. Undo, IME and nested-language highlighting keep working because
+nothing rewrites the buffer. `src/renderer/editor/extensions/` holds the
 decoration passes: `inlineDecorations` for anything within a line,
 `blockDecorations` for tables and display math (a multi-line replacement changes
 line structure, which CodeMirror forbids a ViewPlugin from doing).
