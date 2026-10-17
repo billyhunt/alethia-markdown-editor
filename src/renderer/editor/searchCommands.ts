@@ -34,12 +34,41 @@ const focusField = (view: EditorView, selector: string): void => {
 }
 
 /**
+ * Opening the panel reseeds the query from the selection through
+ * CodeMirror's `defaultQuery`, which keeps the flags but drops the
+ * replacement -- both when reopening a closed panel and when the panel is
+ * open with focus outside the search field (the replace field, say). The
+ * next Replace would then substitute nothing and delete the match, so the
+ * replacement is put back after the reseed.
+ */
+const openKeepingReplace = (view: EditorView): boolean => {
+  const { replace } = getSearchQuery(view.state)
+  const opened = openSearchPanel(view)
+  const after = getSearchQuery(view.state)
+  if (after.replace !== replace) {
+    view.dispatch({
+      effects: setSearchQuery.of(
+        new SearchQuery({
+          search: after.search,
+          caseSensitive: after.caseSensitive,
+          literal: after.literal,
+          regexp: after.regexp,
+          wholeWord: after.wholeWord,
+          replace,
+        }),
+      ),
+    })
+  }
+  return opened
+}
+
+/**
  * CodeMirror's panel focuses its search field by calling `select()`, which is
  * not specified to move focus, so the focus is made explicit here rather than
  * left to browser behaviour.
  */
 const find: Command = (view) => {
-  const opened = openSearchPanel(view)
+  const opened = openKeepingReplace(view)
   focusField(view, '[main-field]')
   return opened
 }

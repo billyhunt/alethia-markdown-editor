@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { EditorSelection } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { getSearchQuery, searchPanelOpen, setSearchQuery, SearchQuery } from '@codemirror/search'
+import { closeSearchPanel, getSearchQuery, searchPanelOpen, setSearchQuery, SearchQuery } from '@codemirror/search'
 import { createEditorState } from '../../src/renderer/editor/createEditor.ts'
 import { SEARCH_COMMANDS, searchFocusPlan } from '../../src/renderer/editor/searchCommands.ts'
 
@@ -50,6 +50,37 @@ describe('SEARCH_COMMANDS', () => {
     // The distinction between the two menu items is this and nothing else,
     // so a regression here silently merges them.
     expect((document.activeElement as HTMLInputElement | null)?.name).toBe('search')
+  })
+
+  it('keeps the replacement when find is invoked from the replace field with a match selected', () => {
+    const v = mount()
+    SEARCH_COMMANDS.find(v)
+    v.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: 'beta', replace: 'gamma' })) })
+    v.dispatch({ selection: EditorSelection.range(6, 10) })
+    const replaceField = v.dom.querySelector<HTMLInputElement>('.cm-search input[name="replace"]')!
+    replaceField.focus()
+    expect(document.activeElement).toBe(replaceField)
+
+    SEARCH_COMMANDS.find(v)
+
+    // With the panel open and focus off the search field, openSearchPanel
+    // rebuilds the query from the selection through defaultQuery, which has
+    // no replace. The next Replace would then delete the match.
+    expect(getSearchQuery(v.state).search).toBe('beta')
+    expect(getSearchQuery(v.state).replace).toBe('gamma')
+    expect(replaceField.value).toBe('gamma')
+  })
+
+  it('keeps the replacement when find reopens a closed panel over a selected match', () => {
+    const v = mount()
+    SEARCH_COMMANDS.find(v)
+    v.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: 'beta', replace: 'gamma' })) })
+    closeSearchPanel(v)
+    v.dispatch({ selection: EditorSelection.range(6, 10) })
+
+    SEARCH_COMMANDS.find(v)
+
+    expect(getSearchQuery(v.state).replace).toBe('gamma')
   })
 
   it('seeds the query from the selection', () => {
