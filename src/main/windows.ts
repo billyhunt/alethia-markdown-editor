@@ -71,13 +71,20 @@ const canonicalFileIdentity = (filePath: string): string => {
   try { return fs.realpathSync(filePath) } catch { return path.resolve(filePath) }
 }
 
-/** Records what a window is showing, so files can be routed to it. */
+/**
+ * Records what a window is showing, so files can be routed to it. The id the
+ * renderer uses for relative links survives re-watching the same document
+ * (every save does that) and changes only when the document itself does.
+ */
 export function noteDocument(win: BrowserWindow, filePath: string | null): string | null {
-  stateFor(win).filePath = filePath
-  stateFor(win).fileIdentity = filePath ? canonicalFileIdentity(filePath) : null
-  stateFor(win).documentId = filePath ? randomUUID() : null
+  const state = stateFor(win)
+  const identity = filePath ? canonicalFileIdentity(filePath) : null
+  const unchanged = identity !== null && identity === state.fileIdentity && state.documentId !== null
+  state.filePath = filePath
+  state.fileIdentity = identity
+  if (!unchanged) state.documentId = filePath ? randomUUID() : null
   persistSessions()
-  return stateFor(win).documentId
+  return state.documentId
 }
 
 export const documentForId = (win: BrowserWindow, id: unknown): string | null => {

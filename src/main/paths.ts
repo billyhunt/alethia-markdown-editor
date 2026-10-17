@@ -50,11 +50,19 @@ export function grantRoot(dirPath: string): string {
  * Symlinks are resolved so a granted path cannot be used to reach outside its
  * root. For files that do not exist yet (Save As into a new name) the nearest
  * existing ancestor is realpath'd instead.
+ *
+ * A final component that IS a symlink but whose target cannot be resolved
+ * (dangling) must never take that fallback: parent/linkname looks like it is
+ * inside the root, yet a write through the link would create its target
+ * wherever it points.
  */
 async function realResolve(target: string): Promise<string> {
   try {
     return await fs.realpath(target)
   } catch {
+    if (await fs.lstat(target).then(stats => stats.isSymbolicLink(), () => false)) {
+      throw new PathPermissionError('EPERM: refusing to follow a dangling symlink')
+    }
     const parent = path.dirname(target)
     try {
       return path.join(await fs.realpath(parent), path.basename(target))
@@ -127,6 +135,23 @@ export async function assertWritable(input: unknown): Promise<string> {
     throw new PathPermissionError('EPERM: refusing to write inside userData')
   }
   return target
+}
+
+/**
+ * The path a write must actually go to: the resolved real path when the file
+ * exists, so I/O lands on exactly what assertWritable approved rather than
+ * re-following a link the check already resolved. A file that does not exist
+ * yet has no link to follow and is written at the checked path.
+ */
+export async function resolveWriteTarget(checked: string): Promise<string> {
+  try {
+    return await fs.realpath(checked)
+  } catch {
+    if (await fs.lstat(checked).then(stats => stats.isSymbolicLink(), () => false)) {
+      throw new PathPermissionError('EPERM: refusing to follow a dangling symlink')
+    }
+    return checked
+  }
 }
 
 /** Directories are readable when granted as a root. */

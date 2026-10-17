@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { assertReadable, assertReadableDir, assertWritable, grantFile } from './paths.ts'
+import { assertReadable, assertReadableDir, assertWritable, grantFile, resolveWriteTarget } from './paths.ts'
 import { snapshotVersion } from './versions.ts'
 import { MARKDOWN_EXTENSIONS } from '../shared/markdown.ts'
 import type {
@@ -112,7 +112,7 @@ export async function writeTextFile(
   // Written in place rather than temp-and-rename: rename would replace
   // symlinks, drop Finder tags and xattrs, and change the inode, which
   // confuses other editors watching the same file.
-  await fs.writeFile(filePath, onDisk, 'utf8')
+  await fs.writeFile(await resolveWriteTarget(filePath), onDisk, 'utf8')
   const stats = await fs.stat(filePath)
   rememberState(filePath, onDisk, stats.mtimeMs)
   suppressUntil.set(filePath, Date.now() + 500)

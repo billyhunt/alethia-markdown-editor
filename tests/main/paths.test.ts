@@ -8,8 +8,9 @@ import path from 'node:path'
 const USER_DATA = path.join(os.tmpdir(), 'alethia-test-userdata')
 vi.mock('electron', () => ({ app: { getPath: () => USER_DATA } }))
 
-const { assertReadable, assertReadableDir, assertWritable, grantFile, grantRoot, validatePath } =
+const { assertGranted, assertReadable, assertReadableDir, assertWritable, grantFile, grantRoot, resolveWriteTarget, validatePath } =
   await import('../../src/main/paths.ts')
+const { writeTextFile } = await import('../../src/main/files.ts')
 
 let root: string
 let granted: string
@@ -127,6 +128,49 @@ describe('assertWritable', () => {
   it('allows a file that does not exist yet, for Save As', async () => {
     grantRoot(root)
     await expect(assertWritable(path.join(root, 'brand-new.md'))).resolves.toBeTruthy()
+  })
+})
+
+describe('a dangling symlink inside a granted root', () => {
+  let target: string
+  let link: string
+  beforeAll(async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-dangling-'))
+    target = path.join(dir, 'planted.md')
+    link = path.join(root, 'dangling.md')
+    await fs.symlink(target, link)
+  })
+  afterAll(async () => { await fs.rm(path.dirname(target), { recursive: true, force: true }) })
+
+  it('is refused for writing, and nothing is created at its target', async () => {
+    grantRoot(root)
+    await expect(assertWritable(link)).rejects.toThrow(/EPERM/)
+    await expect(writeTextFile(link, 'pwned')).rejects.toThrow(/EPERM/)
+    await expect(fs.stat(target)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('is refused for reading and for granting checks', async () => {
+    grantRoot(root)
+    await expect(assertReadable(link)).rejects.toThrow(/EPERM/)
+    await expect(assertGranted(link)).rejects.toThrow(/EPERM/)
+  })
+
+  it('does not resolve a link that appears between the check and the write', async () => {
+    grantRoot(root)
+    await expect(resolveWriteTarget(link)).rejects.toThrow(/EPERM/)
+  })
+})
+
+describe('writing through a live symlink inside a granted root', () => {
+  it('writes the real file that the check approved', async () => {
+    const real = path.join(root, 'real-note.md')
+    const alias = path.join(root, 'alias-note.md')
+    await fs.writeFile(real, 'old')
+    await fs.symlink(real, alias)
+    grantRoot(root)
+    await writeTextFile(alias, 'new')
+    expect(await fs.readFile(real, 'utf8')).toBe('new')
+    expect((await fs.lstat(alias)).isSymbolicLink()).toBe(true)
   })
 })
 

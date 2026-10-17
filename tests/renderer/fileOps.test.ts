@@ -18,7 +18,7 @@ vi.mock('../../src/renderer/editor/editorController.ts', () => ({
 }))
 
 import {
-  closeDocument, ensureClosable, forgetTrashedFile, openFileDialog, openPath, renameFile, save,
+  closeDocument, ensureClosable, forgetTrashedFile, openFileDialog, openPath, renameFile, save, saveAs,
 } from '../../src/renderer/services/fileOps.ts'
 import { handleFileChange } from '../../src/renderer/services/externalChanges.ts'
 import { useDocumentStore as docs } from '../../src/renderer/state/documentStore.ts'
@@ -148,6 +148,33 @@ it('preserves the current document ID when reloading that file after an external
 })
 
 describe('document IDs returned after a save or rename', () => {
+  it('drops the document ID synchronously when Save As changes the path', async () => {
+    let finish!: (id: string) => void
+    docs.setState({ documentId: 'old-file-id' })
+    host.dialog.saveAs.mockResolvedValue(next)
+    host.fs.writeFile.mockResolvedValue({ ok: true, mtimeMs: 3 })
+    host.document.watch.mockReturnValue(new Promise<string>(resolve => { finish = resolve }))
+    const saving = saveAs()
+    await vi.waitFor(() => expect(host.document.watch).toHaveBeenCalledWith(next))
+    expect(docs.getState()).toMatchObject({ filePath: next, documentId: null })
+    finish('new-file-id')
+    await saving
+    expect(docs.getState()).toMatchObject({ filePath: next, documentId: 'new-file-id' })
+  })
+
+  it('keeps the document ID while re-saving the same path', async () => {
+    let finish!: (id: string) => void
+    docs.setState({ documentId: 'same-file-id' })
+    host.fs.writeFile.mockResolvedValue({ ok: true, mtimeMs: 3 })
+    host.document.watch.mockReturnValue(new Promise<string>(resolve => { finish = resolve }))
+    const saving = save()
+    await vi.waitFor(() => expect(host.document.watch).toHaveBeenCalledWith(file))
+    expect(docs.getState().documentId).toBe('same-file-id')
+    finish('same-file-id')
+    await saving
+    expect(docs.getState().documentId).toBe('same-file-id')
+  })
+
   it('does not attach a saved file ID after switching documents during watch setup', async () => {
     let finish!: (id: string) => void
     host.fs.writeFile.mockResolvedValue({ ok: true, mtimeMs: 3 })

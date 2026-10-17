@@ -10,13 +10,15 @@ const native = vi.hoisted(() => ({
   showMessageBox: vi.fn(),
   createWindow: vi.fn(),
   sourcePath: '',
+  dropToken: 'drop-token-1',
+  showItemInFolder: vi.fn(),
 }))
 vi.mock('electron', () => ({
   app: { getPath: () => os.tmpdir(), addRecentDocument: vi.fn(), getVersion: () => 'test' },
   ipcMain: { handle: (name: string, handler: (...args: any[]) => any) => native.handlers.set(name, handler) },
   BrowserWindow: { fromWebContents: (sender: any) => native.windows.find(w => w.webContents === sender), getAllWindows: () => native.windows },
   dialog: { showMessageBox: native.showMessageBox },
-  shell: {},
+  shell: { showItemInFolder: native.showItemInFolder },
 }))
 vi.mock('../../src/main/watcher.ts', () => ({
   watchDocument: vi.fn(), watchFolder: vi.fn(), unwatchDocument: vi.fn(), unwatchFolder: vi.fn(),
@@ -24,7 +26,7 @@ vi.mock('../../src/main/watcher.ts', () => ({
 vi.mock('../../src/main/windows.ts', () => ({
   createWindow: native.createWindow,
   documentForId: (_win: unknown, id: unknown) => id === 'document-1' ? native.sourcePath : null,
-  dropTokenMatches: () => false,
+  dropTokenMatches: (_contents: unknown, token: unknown) => token === native.dropToken,
   issueDropToken: () => 'preload-token',
   markForceClose: vi.fn(),
   noteDocument: vi.fn(),
@@ -57,7 +59,7 @@ beforeEach(async () => {
 })
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }) })
 
-it('opens a linked file through IPC, confirms its real symlink target, and grants its folder', async () => {
+it('opens a linked file through IPC, confirms its real symlink target, and grants only that file', async () => {
   const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-linked-target-'))
   const realTarget = path.join(outside, 'real.md')
   const linkDir = path.join(root, 'notes')
@@ -73,12 +75,29 @@ it('opens a linked file through IPC, confirms its real symlink target, and grant
       message: expect.stringContaining('symbolic link'),
       detail: canonicalTarget,
     })
-    expect(native.createWindow).toHaveBeenCalledWith(expect.objectContaining({ folder: path.dirname(canonicalTarget), file: canonicalTarget }))
+    expect(native.createWindow).toHaveBeenCalledWith(expect.objectContaining({ folder: null, file: canonicalTarget }))
     await expect(assertReadable(canonicalTarget)).resolves.toBe(canonicalTarget)
-    await expect(assertReadableDir(path.dirname(canonicalTarget))).resolves.toBe(path.dirname(canonicalTarget))
+    // The sibling in the same directory is NOT readable: the folder was never granted.
+    const sibling = path.join(outside, 'sibling.md')
+    await fs.writeFile(sibling, '# sibling')
+    await expect(assertReadable(sibling)).rejects.toThrow(/EPERM/)
+    await expect(assertReadableDir(path.dirname(canonicalTarget))).rejects.toThrow(/EPERM/)
   } finally {
     await fs.rm(outside, { recursive: true, force: true })
   }
+})
+
+it('does not widen an already file-granted linked target to its folder', async () => {
+  const other = path.join(root, 'other.md')
+  const neighbour = path.join(root, 'neighbour.md')
+  await fs.writeFile(other, '# other')
+  await fs.writeFile(neighbour, '# neighbour')
+  grantFile(await fs.realpath(other))
+  await invoke(IPC.appOpenLinkedFile, './other.md', 'document-1')
+  expect(native.showMessageBox).not.toHaveBeenCalled()
+  expect(native.createWindow).toHaveBeenCalledWith(expect.objectContaining({ folder: null }))
+  await expect(assertReadable(neighbour)).rejects.toThrow(/EPERM/)
+  expect(getSettings().windows).toEqual([])
 })
 
 it('refuses a symlink whose real target is not markdown', async () => {
@@ -106,11 +125,53 @@ it('refuses to turn an ungranted recent into a grant', async () => {
   expect(getSettings().recentFiles).toEqual([])
   await expect(assertReadable(secret)).rejects.toThrow(/EPERM/)
 })
-it.each(['recentFiles', 'windows'])('rejects renderer settings authority through %s', async key => {
-  const patch = key === 'recentFiles' ? { recentFiles: [secret] } : { windows: [{ file: secret, folder: root }] }
-  await expect(invoke(IPC.settingsPatch, patch)).rejects.toThrow(/EPERM/)
-  expect(getSettings().recentFiles).toEqual([])
-  expect(getSettings().windows).toEqual([])
+it.each(['recentFiles', 'windows', 'windowBounds', 'theme'])('rejects renderer settings authority through %s', async key => {
+  const patches: Record<string, unknown> = {
+    recentFiles: { recentFiles: [secret] },
+    windows: { windows: [{ file: secret, folder: root }] },
+    windowBounds: { windowBounds: { width: 1e9, height: -5 } },
+    theme: { theme: 'dark' },
+  }
+  const before = structuredClone(getSettings())
+  await expect(invoke(IPC.settingsPatch, patches[key])).rejects.toThrow(/EPERM/)
+  expect(getSettings()).toEqual(before)
+})
+it('accepts the UI settings the renderer owns and clamps the sidebar width', async () => {
+  await invoke(IPC.settingsPatch, { sidebar: { visible: false, width: 1e9 }, toolbarVisible: false, autosave: false })
+  expect(getSettings()).toMatchObject({ sidebar: { visible: false, width: 800 }, toolbarVisible: false, autosave: false })
+  await invoke(IPC.settingsPatch, { sidebar: { visible: true, width: 300 }, toolbarVisible: true, autosave: true })
+  expect(getSettings()).toMatchObject({ sidebar: { visible: true, width: 300 }, toolbarVisible: true, autosave: true })
+})
+it.each([
+  { toolbarVisible: 'yes' },
+  { autosave: 1 },
+  { sidebar: 'wide' },
+  { sidebar: { visible: 'yes' } },
+  { sidebar: { width: Infinity } },
+  { sidebar: { width: '300' } },
+  { sidebar: { width: null } },
+])('rejects junk UI setting values %j', async patch => {
+  const before = structuredClone(getSettings())
+  await expect(invoke(IPC.settingsPatch, patch)).rejects.toThrow()
+  expect(getSettings()).toEqual(before)
+})
+it('ignores unknown keys nested in the sidebar patch', async () => {
+  await invoke(IPC.settingsPatch, { sidebar: { visible: true, width: 260, evil: '/etc' } })
+  expect(getSettings().sidebar).toEqual({ visible: true, width: 260 })
+})
+it('accepts a drop only with the preload-issued token', async () => {
+  await expect(invoke(IPC.appGrantDroppedPath, secret, 'wrong-token')).rejects.toThrow(/EPERM/)
+  await expect(invoke(IPC.appGrantDroppedPath, secret, undefined)).rejects.toThrow(/EPERM/)
+  await expect(assertReadable(secret)).rejects.toThrow(/EPERM/)
+  await expect(invoke(IPC.appGrantDroppedPath, secret, native.dropToken)).resolves.toEqual({ path: secret, kind: 'file' })
+  await expect(assertReadable(secret)).resolves.toBe(secret)
+})
+it('only reveals granted paths in Finder', async () => {
+  await expect(invoke(IPC.shellShowItemInFolder, secret)).rejects.toThrow(/EPERM/)
+  expect(native.showItemInFolder).not.toHaveBeenCalled()
+  grantFile(secret)
+  await invoke(IPC.shellShowItemInFolder, secret)
+  expect(native.showItemInFolder).toHaveBeenCalledWith(secret)
 })
 it.each([IPC.folderList, IPC.folderWatch, IPC.docWatch])('refuses ungranted folder or watch paths through %s', async channel => {
   await expect(invoke(channel, channel === IPC.folderWatch ? root : secret)).rejects.toThrow(/EPERM/)

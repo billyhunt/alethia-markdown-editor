@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises'
-import path from 'node:path'
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { isReadablePath } from '../shared/markdown.ts'
@@ -193,8 +192,10 @@ export function registerIpcHandlers(): void {
       },
       confirm: (target, isLink) => confirmOpenLinkedFile(win, target, isLink),
       open: target => {
-        grantRoot(path.dirname(target))
-        createWindow({ bounds: { width: 1100, height: 760 }, folder: path.dirname(target), file: grantFile(target) })
+        // Only the one file is granted. Widening to its directory would let an
+        // already-granted file turn into a whole folder without any dialog,
+        // and the folder would then persist in the saved window sessions.
+        createWindow({ bounds: { width: 1100, height: 760 }, folder: null, file: grantFile(target) })
       },
       missing: target => { void showError(win, 'Could not open linked file', `File not found: ${target}`) },
     })
@@ -223,7 +224,7 @@ export function registerIpcHandlers(): void {
     if (!/^https?:\/\//.test(target)) throw new Error('EPERM: only http(s) URLs may be opened')
     return shell.openExternal(target)
   })
-  ipcMain.handle(IPC.shellShowItemInFolder, (_event, filePath: unknown) => {
-    shell.showItemInFolder(validatePath(filePath))
+  ipcMain.handle(IPC.shellShowItemInFolder, async (_event, filePath: unknown) => {
+    shell.showItemInFolder(await assertGranted(filePath))
   })
 }

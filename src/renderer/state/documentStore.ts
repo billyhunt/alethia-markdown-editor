@@ -50,8 +50,16 @@ export const useDocumentStore = create<DocumentState>((set) => ({
       lineEnding: lineEnding ?? '\n',
       dirty: false,
     })),
+  // Main resolves relative links against the path behind documentId, so an id
+  // must never outlive a change of path (Save As) while its re-watch is pending.
   markSaved: ({ filePath, text, mtimeMs }) =>
-    set({ filePath, savedText: text, mtimeMs, dirty: false }),
+    set((state) => ({
+      filePath,
+      documentId: state.filePath === filePath ? state.documentId : null,
+      savedText: text,
+      mtimeMs,
+      dirty: false,
+    })),
   setDirty: (dirty) => set({ dirty }),
   syncMtime: (mtimeMs) => set({ mtimeMs }),
 }))

@@ -16,7 +16,7 @@ vi.mock('../../src/main/settings.ts', () => ({
   patchSettings: vi.fn(),
 }))
 vi.mock('../../src/main/watcher.ts', () => ({ closeWatchersFor: vi.fn() }))
-import { noteDocument, windowShowing } from '../../src/main/windows.ts'
+import { documentForId, noteDocument, windowShowing } from '../../src/main/windows.ts'
 
 let root: string
 
@@ -42,4 +42,25 @@ it('matches a symlinked open path to its canonical target window', async () => {
   noteDocument(win, alias)
   expect(windowShowing(real)).toBe(win)
   expect(windowShowing(alias)).toBe(win)
+})
+
+it('keeps the document id when the same document is watched again, and changes it for another', async () => {
+  const a = path.join(root, 'a.md')
+  const b = path.join(root, 'b.md')
+  const alias = path.join(root, 'alias.md')
+  await fs.writeFile(a, '# a')
+  await fs.writeFile(b, '# b')
+  await fs.symlink(a, alias)
+  const win = native.windows[0]
+  const first = noteDocument(win, a)
+  expect(first).toBeTruthy()
+  expect(noteDocument(win, a)).toBe(first)
+  expect(documentForId(win, first)).toBe(a)
+  expect(noteDocument(win, alias)).toBe(first)
+  expect(documentForId(win, first)).toBe(alias)
+  const second = noteDocument(win, b)
+  expect(second).not.toBe(first)
+  expect(documentForId(win, first)).toBeNull()
+  expect(noteDocument(win, null)).toBeNull()
+  expect(noteDocument(win, b)).not.toBe(second)
 })
