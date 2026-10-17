@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { EditorSelection, EditorState } from '@codemirror/state'
-import { EditorView, runScopeHandlers } from '@codemirror/view'
+import { defaultKeymap } from '@codemirror/commands'
+import { EditorView, keymap, runScopeHandlers } from '@codemirror/view'
 import { markdownExtension } from '../../src/renderer/editor/markdownLanguage.ts'
 
 /** Presses Enter `times` with the caret at the end of `doc`, as the user would. */
@@ -39,5 +40,29 @@ describe('Enter in a list', () => {
 
   it('still continues a quote', () => {
     expect(pressEnter('> quoted', 1)).toBe('> quoted\n> ')
+  })
+})
+
+describe('Enter with multiple cursors', () => {
+  it('does not duplicate numbers when two empty items are removed at once', () => {
+    const doc = '1. one\n2. \n3. three\n4. \n5. five'
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        selection: EditorSelection.create([
+          EditorSelection.cursor(doc.indexOf('2. ') + 3),
+          EditorSelection.cursor(doc.indexOf('4. ') + 3),
+        ]),
+        extensions: [
+          EditorState.allowMultipleSelections.of(true),
+          markdownExtension,
+          keymap.of(defaultKeymap),
+        ],
+      }),
+    })
+    runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'Enter' }), 'editor')
+    const text = view.state.doc.toString()
+    view.destroy()
+    expect(text.split('\n').filter((l) => l.includes('five'))).toEqual(['5. five'])
   })
 })
