@@ -34,13 +34,13 @@ async function adoptFile(filePath: string): Promise<void> {
   // goes before the editor learns the path: an image request that arrived
   // first would be refused as "not open", and the widget remembers a refusal
   // as a failed image.
-  await api.document.watch(filePath)
+  const documentId = await api.document.watch(filePath)
   // Path next: the editor builds image URLs from it during setDocument, and
   // the store effect that would correct it runs a tick later. Without this,
   // opening B while A is open briefly requests B's images against A's folder.
   editorController.setFilePath(filePath)
   editorController.setDocument(content)
-  useDocumentStore.getState().load({ filePath, text: content, mtimeMs, lineEnding })
+  useDocumentStore.getState().load({ filePath, documentId, text: content, mtimeMs, lineEnding })
   await api.recents.add(filePath)
   useWorkspaceStore.getState().setNotice(null)
 }
@@ -206,10 +206,13 @@ async function performWriteTo(filePath: string, expectedMtimeMs: number | null):
     // Watch first: for Save As this is what tells main which document the
     // window shows, and the editor builds image URLs the moment the store
     // publishes the new path. See adoptFile.
-    await api.document.watch(filePath)
+    const documentId = await api.document.watch(filePath)
     const current = useDocumentStore.getState()
     if (current.filePath !== before.filePath || current.savedText !== before.savedText) return false
     current.markSaved({ filePath, text, mtimeMs: result.mtimeMs })
+    // markSaved dropped the id if the path changed (Save As); main has just
+    // named the document at its new path, and relative links need that id.
+    useDocumentStore.setState({ documentId })
     current.setDirty(editorController.getText() !== text)
     await api.recents.add(filePath)
     useWorkspaceStore.getState().setNotice(null)
@@ -301,17 +304,21 @@ export function forgetTrashedFile(filePath: string): void {
 }
 
 export async function renameFile(filePath: string, name: string): Promise<void> {
-  const wasOpen = useDocumentStore.getState().filePath === filePath
+  const startingDocument = useDocumentStore.getState()
+  const wasOpen = startingDocument.filePath === filePath
   try {
     const result = await api.fs.rename(filePath, name)
     const next = result.path
     if (wasOpen) {
       // Follow the file: the buffer is unchanged, only its identity moved.
       // Same ordering rule as adoptFile: main learns the new path first.
-      await api.document.watch(next)
+      const documentId = await api.document.watch(next)
       const doc = useDocumentStore.getState()
-      doc.load({ filePath: next, text: doc.savedText, mtimeMs: doc.mtimeMs, lineEnding: doc.lineEnding })
-      doc.setDirty(editorController.getText() !== doc.savedText)
+      // Another document may have taken over the window while this ran.
+      if (doc.revision === startingDocument.revision && doc.filePath === filePath) {
+        doc.load({ filePath: next, documentId, text: doc.savedText, mtimeMs: doc.mtimeMs, lineEnding: doc.lineEnding })
+        doc.setDirty(editorController.getText() !== doc.savedText)
+      }
       await api.recents.add(next)
     }
     await refreshFolder()

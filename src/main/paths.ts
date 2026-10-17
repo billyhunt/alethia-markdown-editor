@@ -49,11 +49,19 @@ export function grantRoot(dirPath: string): string {
  * Symlinks are resolved so a granted path cannot be used to reach outside its
  * root. For files that do not exist yet (Save As into a new name) the nearest
  * existing ancestor is realpath'd instead.
+ *
+ * A final component that IS a symlink but whose target cannot be resolved
+ * (dangling) must never take that fallback: parent/linkname looks like it is
+ * inside the root, yet a write through the link would create its target
+ * wherever it points.
  */
 async function realResolve(target: string): Promise<string> {
   try {
     return await fs.realpath(target)
   } catch {
+    if (await fs.lstat(target).then(stats => stats.isSymbolicLink(), () => false)) {
+      throw new PathPermissionError('EPERM: refusing to follow a dangling symlink')
+    }
     const parent = path.dirname(target)
     try {
       return path.join(await fs.realpath(parent), path.basename(target))
@@ -95,15 +103,19 @@ export function canonicalPathSync(target: string): string {
  */
 async function isGranted(real: string): Promise<boolean> {
   for (const filePath of grantedFiles) {
-    if (real === filePath || real === (await realResolve(filePath))) return true
+    if (real === filePath || real === (await grantRealPath(filePath))) return true
   }
   for (const root of grantedRoots) {
-    for (const candidate of [root, await realResolve(root)]) {
-      if (real === candidate || real.startsWith(candidate + path.sep)) return true
+    for (const candidate of [root, await grantRealPath(root)]) {
+      if (candidate !== null && (real === candidate || real.startsWith(candidate + path.sep))) return true
     }
   }
   return false
 }
+
+/** A grant that has since become a dangling link matches nothing, rather than failing every check. */
+const grantRealPath = (granted: string): Promise<string | null> =>
+  realResolve(granted).catch(() => null)
 
 export async function assertReadable(input: unknown): Promise<string> {
   const target = validatePath(input)
@@ -114,6 +126,12 @@ export async function assertReadable(input: unknown): Promise<string> {
     throw new PathPermissionError('EPERM: unsupported file type')
   }
   return real
+}
+
+export async function assertGranted(input: unknown): Promise<string> {
+  const target = validatePath(input)
+  if (!(await isGranted(await realResolve(target)))) throw new PathPermissionError()
+  return target
 }
 
 export async function assertWritable(input: unknown): Promise<string> {
@@ -149,6 +167,23 @@ export async function assertWritableSibling(source: string, destination: unknown
     throw new PathPermissionError('EPERM: refusing to write inside userData')
   }
   return target
+}
+
+/**
+ * The path a write must actually go to: the resolved real path when the file
+ * exists, so I/O lands on exactly what assertWritable approved rather than
+ * re-following a link the check already resolved. A file that does not exist
+ * yet has no link to follow and is written at the checked path.
+ */
+export async function resolveWriteTarget(checked: string): Promise<string> {
+  try {
+    return await fs.realpath(checked)
+  } catch {
+    if (await fs.lstat(checked).then(stats => stats.isSymbolicLink(), () => false)) {
+      throw new PathPermissionError('EPERM: refusing to follow a dangling symlink')
+    }
+    return checked
+  }
 }
 
 /** Directories are readable when granted as a root. */

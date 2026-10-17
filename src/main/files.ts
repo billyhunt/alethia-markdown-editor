@@ -6,7 +6,14 @@ import fs from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { assertReadable, assertReadableDir, assertWritable, assertWritableSibling, grantFile } from './paths.ts'
+import {
+  assertReadable,
+  assertReadableDir,
+  assertWritable,
+  assertWritableSibling,
+  grantFile,
+  resolveWriteTarget,
+} from './paths.ts'
 import { moveVersionHistory, snapshotVersion } from './versions.ts'
 import { MARKDOWN_EXTENSIONS } from '../shared/markdown.ts'
 import type {
@@ -196,7 +203,7 @@ export async function writeTextFile(
     // Written in place rather than temp-and-rename: rename would replace
     // symlinks, drop Finder tags and xattrs, and change the inode, which
     // confuses other editors watching the same file.
-    await fs.writeFile(filePath, onDisk, 'utf8')
+    await fs.writeFile(await resolveWriteTarget(filePath), onDisk, 'utf8')
     const stats = await fs.stat(filePath)
     rememberState(filePath, onDisk, stats.mtimeMs)
     suppressUntil.set(filePath, Date.now() + 500)

@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { app, BrowserWindow, nativeTheme, screen } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { EMPTY_SESSION, type WindowSession } from '../shared/settings.ts'
@@ -19,6 +20,13 @@ interface WindowState {
   session: WindowSession
   /** The document currently open (its real path), so a file can be routed to it. */
   filePath: string | null
+  /**
+   * Names the document shown here, for requests that must be tied to it (a
+   * relative link resolves against whatever this id stands for, never against
+   * a path the renderer supplies). Minted when the document changes and kept
+   * while the same file is merely re-watched, as every save does.
+   */
+  documentId: string | null
   /**
    * A file routed here that the renderer has not finished opening. Between
    * the routing decision and the renderer reporting its document, the window
@@ -44,6 +52,7 @@ interface WindowState {
 }
 
 const states = new Map<number, WindowState>()
+const dropTokens = new Map<number, string>()
 let isQuitting = false
 
 export const setQuitting = (value: boolean): void => {
@@ -58,6 +67,7 @@ const stateFor = (win: BrowserWindow): WindowState => {
       forceClose: false,
       session: { ...EMPTY_SESSION },
       filePath: null,
+      documentId: null,
       incoming: null,
       opening: [],
       pending: [],
@@ -86,12 +96,36 @@ export function takeSession(win: BrowserWindow): { session: WindowSession; pendi
   return { session: state.session, pending: state.pending.splice(0) }
 }
 
-/** Records what a window is showing, so files can be routed to it. */
-export function noteDocument(win: BrowserWindow, filePath: string | null): void {
+/**
+ * A token only this window's own preload holds. A drop is authenticated with
+ * it, so a page that merely calls the drop channel cannot grant itself paths.
+ */
+export const dropTokenMatches = (contents: Electron.WebContents, token: unknown): boolean =>
+  typeof token === 'string' && dropTokens.get(contents.id) === token
+
+export const issueDropToken = (contents: Electron.WebContents): string => {
+  const token = randomUUID()
+  dropTokens.set(contents.id, token)
+  return token
+}
+
+/**
+ * Records what a window is showing (its real path), so files can be routed to
+ * it. Returns the id the renderer uses for relative links.
+ */
+export function noteDocument(win: BrowserWindow, filePath: string | null): string | null {
   const state = stateFor(win)
+  const unchanged = filePath !== null && filePath === state.filePath && state.documentId !== null
   state.filePath = filePath
   state.incoming = null
+  if (!unchanged) state.documentId = filePath ? randomUUID() : null
   persistSessions()
+  return state.documentId
+}
+
+export const documentForId = (win: BrowserWindow, id: unknown): string | null => {
+  const state = states.get(win.id)
+  return state && typeof id === 'string' && state.documentId === id ? state.filePath : null
 }
 
 export function noteEdited(win: BrowserWindow, edited: boolean): void {
@@ -278,6 +312,8 @@ export function createWindow(session: WindowSession = { ...EMPTY_SESSION }): Bro
       spellcheck: true,
     },
   })
+  // Captured now: a closed window no longer exposes its webContents.
+  const contentsId = win.webContents.id
 
   const state = stateFor(win)
   state.session = session
@@ -323,6 +359,7 @@ export function createWindow(session: WindowSession = { ...EMPTY_SESSION }): Bro
     // Its watchers belong to it and must not outlive it.
     void closeWatchersFor(win.id)
     states.delete(win.id)
+    dropTokens.delete(contentsId)
   })
 
   // A dead or wedged renderer must never trap the window open.

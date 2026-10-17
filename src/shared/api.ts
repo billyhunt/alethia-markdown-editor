@@ -157,7 +157,7 @@ export interface MarkdownApi {
 
   document: {
     /** Replaces any previous document watch. Emits on.fileChanged. */
-    watch(path: string): Promise<void>
+    watch(path: string): Promise<string | null>
     unwatch(): Promise<void>
   }
 
@@ -206,7 +206,8 @@ export interface MarkdownApi {
     /** Call once after listeners are registered. Flushes queued open-with paths. */
     rendererReady(): Promise<RendererReadyResult>
     /** Validates and grants a dropped path. Rejects non-markdown files. */
-    grantDroppedPath(path: string): Promise<OpenPathEvent>
+    grantDroppedPath(file: File): Promise<OpenPathEvent>
+    openLinkedFile(href: string, documentId: string): Promise<void>
   }
 
   versions: {
@@ -237,9 +238,6 @@ export interface MarkdownApi {
     openExternal(url: string): Promise<void>
     showItemInFolder(path: string): Promise<void>
   }
-
-  /** Synchronous; wraps electron.webUtils.getPathForFile for drag and drop. */
-  getPathForFile(file: File): string
 
   on: {
     command(cb: (cmd: HostCommand) => void): Unsubscribe

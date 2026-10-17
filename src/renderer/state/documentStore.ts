@@ -4,6 +4,9 @@ import type { LineEnding } from '../../shared/api'
 export interface DocumentState {
   /** Absolute path, or null for a document that has never been saved. */
   filePath: string | null
+  documentId: string | null
+  /** Bumped whenever another document takes over this window. */
+  revision: number
   /** The text as last read from or written to disk. */
   savedText: string
   /** mtime of the last read/write; null for an unsaved document. */
@@ -14,6 +17,7 @@ export interface DocumentState {
 
   load: (doc: {
     filePath: string | null
+    documentId?: string | null
     text: string
     mtimeMs: number | null
     lineEnding?: LineEnding
@@ -26,15 +30,36 @@ export interface DocumentState {
 
 export const useDocumentStore = create<DocumentState>((set) => ({
   filePath: null,
+  documentId: null,
+  revision: 0,
   savedText: '',
   mtimeMs: null,
   lineEnding: '\n',
   dirty: false,
 
-  load: ({ filePath, text, mtimeMs, lineEnding }) =>
-    set({ filePath, savedText: text, mtimeMs, lineEnding: lineEnding ?? '\n', dirty: false }),
+  load: ({ filePath, documentId, text, mtimeMs, lineEnding }) =>
+    set((state) => ({
+      filePath,
+      documentId:
+        documentId === undefined
+          ? state.filePath === filePath ? state.documentId : null
+          : documentId,
+      revision: state.revision + 1,
+      savedText: text,
+      mtimeMs,
+      lineEnding: lineEnding ?? '\n',
+      dirty: false,
+    })),
+  // Main resolves relative links against the path behind documentId, so an id
+  // must never outlive a change of path (Save As) while its re-watch is pending.
   markSaved: ({ filePath, text, mtimeMs }) =>
-    set({ filePath, savedText: text, mtimeMs, dirty: false }),
+    set((state) => ({
+      filePath,
+      documentId: state.filePath === filePath ? state.documentId : null,
+      savedText: text,
+      mtimeMs,
+      dirty: false,
+    })),
   setDirty: (dirty) => set({ dirty }),
   syncMtime: (mtimeMs) => set({ mtimeMs }),
 }))
