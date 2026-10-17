@@ -44,12 +44,13 @@ Open these files in Alethia to see its rendering, or browse their Markdown on Gi
 
 | Document | What it shows |
 |---|---|
-| [Welcome tour](public/sample.md) | A larger observing table, inline formatting, lists, code, and a first equation |
+| [Welcome tour](src/renderer/content/welcome.md) | A larger observing table, inline formatting, lists, code, and a first equation |
 | [Formula notebook](public/examples/formula-notebook.md) | Inline and display math, aligned equations, sums, matrices, and an integral |
 | [Project notes](public/examples/project-notes.md) | YAML front matter, a project board, nested checklists, heading levels, and code in three languages |
 
-Open `public` with **Cmd+Shift+O** to browse all three from the sidebar. The welcome
-tour also appears when the app starts without a saved document to restore.
+The welcome tour is built into the app and opens when it starts without a saved
+document to restore. Open `public/examples` with **Cmd+Shift+O** to browse the two
+examples from the sidebar.
 Click into a rendered table or equation to edit its source, then move the caret
 away to see it rendered again. The example files are bundled with packaged builds.
 
@@ -93,9 +94,10 @@ Three processes, split under `src/`:
 | `src/shared/` | Both | Types and channel names, no runtime imports |
 
 **The editor** is CodeMirror 6. The document *is* the markdown text; rendering
-is a decoration layer over it. That means an untouched file round-trips
-byte-identical, and undo, IME and nested-language highlighting all keep working
-because nothing rewrites the buffer. `src/renderer/editor/extensions/` holds the
+is a decoration layer over it. That means an untouched file's document text
+round-trips unchanged, except that BOMs are stripped and mixed line endings are
+normalised. Undo, IME and nested-language highlighting keep working because
+nothing rewrites the buffer. `src/renderer/editor/extensions/` holds the
 decoration passes: `inlineDecorations` for anything within a line,
 `blockDecorations` for tables and display math (a multi-line replacement changes
 line structure, which CodeMirror forbids a ViewPlugin from doing).

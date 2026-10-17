@@ -92,8 +92,5 @@ Click the equation to reveal its source; click the text around it to render it a
 
 ## Keep exploring
 
-The repository's `public/examples` folder has two more documents. Open that folder
-with **Cmd+Shift+O**, then choose a file in the sidebar:
-
-- **formula-notebook.md** — fractions, sums, matrices, integrals, and aligned equations.
-- **project-notes.md** — front matter, a project board, checklists, nested notes, and code.
+Open a folder of your own notes and pick a file in the sidebar. This page isn't
+saved anywhere until you save it: **Cmd+S** asks where to keep a copy.

@@ -41,10 +41,18 @@ export interface ReadFileResult {
 export interface WriteFileOptions {
   /** The mtime the renderer last saw. Null or undefined skips the check. */
   expectedMtimeMs?: number | null
+  /** The exact text this document accepted from disk, normalised to LF. */
+  expectedText?: string
   /** Write even though the file changed on disk since it was loaded. */
   force?: boolean
   /** Restored on write; defaults to LF for a document with no origin. */
   lineEnding?: LineEnding
+}
+
+export interface RenameFileResult {
+  path: string
+  /** The prior path if some local version history could not be moved. */
+  historyPath?: string
 }
 
 export type WriteFileResult =
@@ -137,7 +145,7 @@ export interface MarkdownApi {
      * Renames within the same directory. `name` is a basename, not a path;
      * a markdown extension is enforced. Resolves the new absolute path.
      */
-    rename(path: string, name: string): Promise<string>
+    rename(path: string, name: string): Promise<RenameFileResult>
   }
 
   folder: {

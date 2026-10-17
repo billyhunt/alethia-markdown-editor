@@ -166,3 +166,22 @@ describe('watcher lifetime', () => {
     expect(two.received).toHaveLength(0)
   })
 })
+
+it('refuses autosave after notifying the renderer of an external edit', async () => {
+  const win = fakeWindow(81)
+  const file = at('conflict.md')
+  await fs.writeFile(file, 'accepted\n')
+  const accepted = await readTextFile(file)
+  await watchDocument(asWindow(win), file)
+  await settle(200)
+  await fs.writeFile(file, 'external content\n')
+  await fs.utimes(file, new Date(), new Date(Date.now() + 2000))
+  await settle()
+  expect(win.received.map(e => e.channel)).toContain('host:fileChanged')
+  const result = await writeTextFile(file, 'unsaved buffer\n', {
+    expectedMtimeMs: accepted.mtimeMs,
+    expectedText: accepted.content,
+  })
+  expect(result.ok).toBe(false)
+  expect(await fs.readFile(file, 'utf8')).toBe('external content\n')
+})
