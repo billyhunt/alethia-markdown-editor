@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "npm run build && playwright test",
     "package": "npm run build && electron-builder --mac --dir",
     "verify:package": "node scripts/verify-package.mjs",
     "dist": "npm run build && electron-builder --mac dmg"
@@ -45,6 +46,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.0",
     "@types/katex": "^0.16.8",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
