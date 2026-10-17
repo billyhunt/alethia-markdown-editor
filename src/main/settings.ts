@@ -86,6 +86,12 @@ export function patchSettings(patch: SettingsPatch): Settings {
   return cache
 }
 
+export function patchUiSettings(patch: Record<string, unknown>): Settings {
+  const allowed = new Set(['theme', 'sidebar', 'toolbarVisible', 'autosave', 'windowBounds'])
+  for (const key of Object.keys(patch)) if (!allowed.has(key)) throw new Error(`EPERM: setting ${key} is main-owned`)
+  return patchSettings(patch as SettingsPatch)
+}
+
 function scheduleSave(): void {
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {

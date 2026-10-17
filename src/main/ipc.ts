@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import path from 'node:path'
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { isReadablePath } from '../shared/markdown.ts'
@@ -6,17 +7,19 @@ import { readTextFile, renameFile, statPath, writeTextFile } from './files.ts'
 import { listMarkdownTree } from './folder.ts'
 import {
   confirmSaveChanges,
+  confirmOpenLinkedFile,
   showError,
   showOpenFile,
   showOpenFolder,
   showSaveAs,
 } from './dialogs.ts'
-import { getSettings, patchSettings } from './settings.ts'
+import { getSettings, patchUiSettings } from './settings.ts'
 import { EMPTY_SESSION } from '../shared/settings.ts'
 import { addRecent, clearRecents, listRecents } from './recents.ts'
-import { grantFile, grantRoot, validatePath } from './paths.ts'
+import { assertGranted, grantFile, grantRoot, validatePath } from './paths.ts'
 import { takePendingPaths } from './openWith.ts'
-import { markForceClose, noteDocument, noteFolder, setQuitting, takeSession } from './windows.ts'
+import { createWindow, documentForId, dropTokenMatches, issueDropToken, markForceClose, noteDocument, noteFolder, setQuitting, takeSession, windowShowing } from './windows.ts'
+import { openLinkedMarkdown } from './links.ts'
 import { showFileContextMenu } from './fileMenu.ts'
 import { exportPdf } from './printing.ts'
 import { clearVersions, listVersions, readVersion } from './versions.ts'
@@ -70,10 +73,10 @@ export function registerIpcHandlers(): void {
   )
 
   // --- folder --------------------------------------------------------------
-  ipcMain.handle(IPC.folderList, (_event, root: unknown) => listMarkdownTree(root))
+  ipcMain.handle(IPC.folderList, async (_event, root: unknown) => listMarkdownTree(await assertGranted(root)))
   ipcMain.handle(IPC.folderWatch, async (event, root: unknown) => {
     const win = winOf(event)
-    const target = validatePath(root)
+    const target = await assertGranted(root)
     if (win) {
       noteFolder(win, target)
       await watchFolder(win, target)
@@ -90,10 +93,11 @@ export function registerIpcHandlers(): void {
   // --- document watch ------------------------------------------------------
   ipcMain.handle(IPC.docWatch, async (event, filePath: unknown) => {
     const win = winOf(event)
-    const target = validatePath(filePath)
+    const target = await assertGranted(filePath)
     if (win) {
-      noteDocument(win, target)
+      const id = noteDocument(win, target)
       await watchDocument(win, target)
+      return id
     }
   })
   ipcMain.handle(IPC.docUnwatch, (event) => {
@@ -111,7 +115,7 @@ export function registerIpcHandlers(): void {
 
   // --- settings ------------------------------------------------------------
   ipcMain.handle(IPC.settingsGet, () => getSettings())
-  ipcMain.handle(IPC.settingsPatch, (_event, patch: unknown) => patchSettings(asObject(patch)))
+  ipcMain.handle(IPC.settingsPatch, (_event, patch: unknown) => patchUiSettings(asObject(patch)))
 
   // --- window --------------------------------------------------------------
   ipcMain.handle(IPC.windowClose, (event, opts: unknown) => {
@@ -148,25 +152,52 @@ export function registerIpcHandlers(): void {
   })
 
   // --- app -----------------------------------------------------------------
+  ipcMain.handle(IPC.appPreloadToken, (event) => {
+    if (!winOf(event)) throw new Error('EPERM: unknown renderer')
+    return issueDropToken(event.sender)
+  })
   ipcMain.handle(IPC.appRendererReady, (event): RendererReadyResult => {
     const win = winOf(event)
+    const session = win ? takeSession(win) : { ...EMPTY_SESSION }
     return {
-      pendingPaths: takePendingPaths(),
+      pendingPaths: takePendingPaths(!session.file, win),
       // Each window restores its own document and folder rather than a single
       // application-wide "last file".
-      session: win ? takeSession(win) : { ...EMPTY_SESSION },
+      session,
       settings: getSettings(),
       platform: process.platform,
       version: app.getVersion(),
       isPackaged: app.isPackaged,
     }
   })
-  ipcMain.handle(IPC.appGrantDroppedPath, async (_event, filePath: unknown): Promise<OpenPathEvent> => {
+  ipcMain.handle(IPC.appGrantDroppedPath, async (event, filePath: unknown, token: unknown): Promise<OpenPathEvent> => {
+    if (!winOf(event) || !dropTokenMatches(event.sender, token)) throw new Error('EPERM: untrusted drop')
     const target = validatePath(filePath)
     const stats = await fs.stat(target)
     if (stats.isDirectory()) return { path: grantRoot(target), kind: 'dir' }
     if (!isReadablePath(target)) throw new Error('EPERM: not a markdown file')
     return { path: grantFile(target), kind: 'file' }
+  })
+  ipcMain.handle(IPC.appOpenLinkedFile, async (event, href: unknown, documentId: unknown) => {
+    const win = winOf(event)
+    const source = win && documentForId(win, documentId)
+    if (!win || !source) throw new Error('EPERM: document identity is stale')
+    await openLinkedMarkdown(source, asString(href, 'href'), {
+      realPath: async target => fs.realpath(target).catch(() => null),
+      isGranted: target => assertGranted(target).then(() => true, () => false),
+      existingWindow: target => {
+        const existing = windowShowing(target)
+        if (!existing) return null
+        if (existing.isMinimized()) existing.restore()
+        return { focus: () => existing.focus() }
+      },
+      confirm: (target, isLink) => confirmOpenLinkedFile(win, target, isLink),
+      open: target => {
+        grantRoot(path.dirname(target))
+        createWindow({ bounds: { width: 1100, height: 760 }, folder: path.dirname(target), file: grantFile(target) })
+      },
+      missing: target => { void showError(win, 'Could not open linked file', `File not found: ${target}`) },
+    })
   })
 
   // --- context menu --------------------------------------------------------

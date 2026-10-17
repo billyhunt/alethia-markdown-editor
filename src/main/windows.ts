@@ -1,4 +1,6 @@
 import path from 'node:path'
+import fs from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { BrowserWindow, nativeTheme, screen } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { EMPTY_SESSION, type WindowSession } from '../shared/settings.ts'
@@ -16,6 +18,9 @@ interface WindowState {
   session: WindowSession
   /** The document currently open, so a file can be routed to it. */
   filePath: string | null
+  /** Canonical identity used only for matching the same file across windows. */
+  fileIdentity: string | null
+  documentId: string | null
   /** The workspace folder, kept for session persistence. */
   folder: string | null
   /** True once its renderer has registered its listeners. */
@@ -23,6 +28,7 @@ interface WindowState {
 }
 
 const states = new Map<number, WindowState>()
+const dropTokens = new Map<number, string>()
 let isQuitting = false
 
 export const setQuitting = (value: boolean): void => {
@@ -33,7 +39,7 @@ export const getQuitting = (): boolean => isQuitting
 const stateFor = (win: BrowserWindow): WindowState => {
   let state = states.get(win.id)
   if (!state) {
-    state = { forceClose: false, session: { ...EMPTY_SESSION }, filePath: null, folder: null, ready: false }
+    state = { forceClose: false, session: { ...EMPTY_SESSION }, filePath: null, fileIdentity: null, documentId: null, folder: null, ready: false }
     states.set(win.id, state)
   }
   return state
@@ -52,10 +58,31 @@ export function takeSession(win: BrowserWindow): WindowSession {
 
 export const isReady = (win: BrowserWindow): boolean => states.get(win.id)?.ready === true
 
+export const dropTokenMatches = (contents: Electron.WebContents, token: unknown): boolean =>
+  typeof token === 'string' && dropTokens.get(contents.id) === token
+
+export const issueDropToken = (contents: Electron.WebContents): string => {
+  const token = randomUUID()
+  dropTokens.set(contents.id, token)
+  return token
+}
+
+const canonicalFileIdentity = (filePath: string): string => {
+  try { return fs.realpathSync(filePath) } catch { return path.resolve(filePath) }
+}
+
 /** Records what a window is showing, so files can be routed to it. */
-export function noteDocument(win: BrowserWindow, filePath: string | null): void {
+export function noteDocument(win: BrowserWindow, filePath: string | null): string | null {
   stateFor(win).filePath = filePath
+  stateFor(win).fileIdentity = filePath ? canonicalFileIdentity(filePath) : null
+  stateFor(win).documentId = filePath ? randomUUID() : null
   persistSessions()
+  return stateFor(win).documentId
+}
+
+export const documentForId = (win: BrowserWindow, id: unknown): string | null => {
+  const state = states.get(win.id)
+  return state && typeof id === 'string' && state.documentId === id ? state.filePath : null
 }
 
 export function noteFolder(win: BrowserWindow, folder: string | null): void {
@@ -65,8 +92,10 @@ export function noteFolder(win: BrowserWindow, folder: string | null): void {
 
 /** The window already showing this file, if any. */
 export function windowShowing(filePath: string): BrowserWindow | null {
+  const identity = canonicalFileIdentity(filePath)
   for (const win of BrowserWindow.getAllWindows()) {
-    if (states.get(win.id)?.filePath === filePath) return win
+    const shown = states.get(win.id)?.fileIdentity
+    if (shown && shown === identity) return win
   }
   return null
 }
@@ -155,11 +184,11 @@ export function createWindow(session: WindowSession = { ...EMPTY_SESSION }): Bro
       spellcheck: true,
     },
   })
-
   const state = stateFor(win)
   state.session = session
   state.folder = session.folder
   state.filePath = session.file
+  state.fileIdentity = session.file ? canonicalFileIdentity(session.file) : null
 
   win.once('ready-to-show', () => win.show())
 
@@ -192,6 +221,7 @@ export function createWindow(session: WindowSession = { ...EMPTY_SESSION }): Bro
     // Its watchers belong to it and must not outlive it.
     void closeWatchersFor(win.id)
     states.delete(win.id)
+    dropTokens.delete(win.webContents.id)
   })
 
   // A dead or wedged renderer must never trap the window open.

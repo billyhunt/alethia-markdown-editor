@@ -106,6 +106,12 @@ export async function assertReadable(input: unknown): Promise<string> {
   return target
 }
 
+export async function assertGranted(input: unknown): Promise<string> {
+  const target = validatePath(input)
+  if (!(await isGranted(await realResolve(target)))) throw new PathPermissionError()
+  return target
+}
+
 export async function assertWritable(input: unknown): Promise<string> {
   const target = validatePath(input)
   const real = await realResolve(target)

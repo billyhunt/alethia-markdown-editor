@@ -76,3 +76,12 @@ export async function showError(
     detail: message,
   })
 }
+
+export async function confirmOpenLinkedFile(win: BrowserWindow | null, filePath: string, isLink: boolean): Promise<boolean> {
+  const { response } = await dialog.showMessageBox(win ?? undefined!, {
+    type: 'question', buttons: ['Open', 'Cancel'], defaultId: 0, cancelId: 1,
+    message: isLink ? 'This link points outside the workspace. It is a symbolic link.' : 'Open a linked file outside the current workspace?',
+    detail: filePath,
+  })
+  return response === 0
+}

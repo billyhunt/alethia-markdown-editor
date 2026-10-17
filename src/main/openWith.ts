@@ -1,9 +1,9 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { app } from 'electron'
-import { IPC } from '../shared/ipc.ts'
 import { grantFile, grantRoot, validatePath } from './paths.ts'
-import { createWindow, isReady, vacantWindow, windowShowing } from './windows.ts'
+import { createWindow, isReady, noteDocument, noteFolder, vacantWindow, windowShowing } from './windows.ts'
+import { IPC } from '../shared/ipc.ts'
 import { isReadablePath } from '../shared/markdown.ts'
 import type { OpenPathEvent } from '../shared/api.ts'
 
@@ -16,17 +16,18 @@ let anyWindowReady = false
 
 async function classify(target: string): Promise<OpenPathEvent | null> {
   try {
-    const stats = await fs.stat(target)
-    if (stats.isDirectory()) return { path: grantRoot(target), kind: 'dir' }
-    if (!isReadablePath(target)) return null
+    const realTarget = await fs.realpath(target)
+    const stats = await fs.stat(realTarget)
+    if (stats.isDirectory()) return { path: grantRoot(realTarget), kind: 'dir' }
+    if (!isReadablePath(realTarget)) return null
 
     // Opening a file from Finder also grants its containing folder, so the
     // sidebar can list its siblings. Double-clicking a note and being told to
     // go and open a folder is not a useful place to land. The user picked
     // this file, so its own directory is the narrowest workspace that makes
     // the window usable.
-    grantRoot(path.dirname(target))
-    return { path: grantFile(target), kind: 'file' }
+    grantRoot(path.dirname(realTarget))
+    return { path: grantFile(realTarget), kind: 'file' }
   } catch {
     return null
   }
@@ -43,6 +44,7 @@ export async function enqueuePath(input: string): Promise<void> {
   if (!event) return
 
   if (!anyWindowReady) {
+    if (event.kind === 'file' && pending.some((entry) => entry.kind === 'file' && entry.path === event.path)) return
     pending.push(event)
     return
   }
@@ -57,7 +59,7 @@ export async function enqueuePath(input: string): Promise<void> {
  * other. Otherwise an empty window takes it, and failing that a new one is
  * created, which is what makes several documents open side by side.
  */
-export function route(event: OpenPathEvent): void {
+export function route(event: OpenPathEvent, allowVacant = true): void {
   const existing = event.kind === 'file' ? windowShowing(event.path) : null
   if (existing) {
     if (existing.isMinimized()) existing.restore()
@@ -65,25 +67,30 @@ export function route(event: OpenPathEvent): void {
     return
   }
 
-  const target = vacantWindow()
-  if (target && isReady(target)) {
-    target.webContents.send(IPC.hostOpenPath, event)
-    target.focus()
+  const vacant = allowVacant ? vacantWindow() : null
+  if (vacant && isReady(vacant)) {
+    vacant.webContents.send(IPC.hostOpenPath, event)
+    vacant.focus()
     return
   }
-
-  const created = createWindow()
-  created.webContents.once('did-finish-load', () => {
-    // The renderer registers its listeners during startup, so the path is
-    // held until it reports itself ready rather than sent into the void.
-    pending.push(event)
-  })
+  createWindow({ bounds: { width: 1100, height: 760 }, folder: event.kind === 'dir' ? event.path : path.dirname(event.path), file: event.kind === 'file' ? event.path : null })
 }
 
 /** Called by the app:rendererReady handler; drains and clears the queue. */
-export function takePendingPaths(): OpenPathEvent[] {
+export function takePendingPaths(canUseThisWindow = true, readyWindow?: Electron.BrowserWindow | null): OpenPathEvent[] {
   anyWindowReady = true
-  return pending.splice(0, pending.length)
+  const entries = pending.splice(0, pending.length)
+  const [first, ...rest] = entries
+  for (const entry of rest) route(entry, false)
+  if (first && canUseThisWindow) {
+    if (readyWindow) {
+      if (first.kind === 'file') noteDocument(readyWindow, first.path)
+      noteFolder(readyWindow, first.kind === 'dir' ? first.path : path.dirname(first.path))
+    }
+    return [first]
+  }
+  if (first) route(first, false)
+  return []
 }
 
 /**

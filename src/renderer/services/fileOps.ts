@@ -21,9 +21,14 @@ export async function ensureClosable(): Promise<boolean> {
 async function adoptFile(filePath: string): Promise<void> {
   const { content, mtimeMs, lineEnding } = await api.fs.readFile(filePath)
   editorController.setDocument(content)
-  useDocumentStore.getState().load({ filePath, text: content, mtimeMs, lineEnding })
+  useDocumentStore.getState().load({ filePath, documentId: null, text: content, mtimeMs, lineEnding })
+  const revision = useDocumentStore.getState().revision
+  const documentId = await api.document.watch(filePath)
+  const current = useDocumentStore.getState()
+  if (current.revision === revision && current.filePath === filePath) {
+    useDocumentStore.setState({ documentId })
+  }
   await api.recents.add(filePath)
-  await api.document.watch(filePath)
   useWorkspaceStore.getState().setNotice(null)
 
   // With no workspace yet, take the file's own folder. Otherwise opening a
@@ -91,16 +96,25 @@ export async function saveAs(): Promise<boolean> {
 
 async function writeTo(filePath: string, expectedMtimeMs: number | null): Promise<boolean> {
   const text = editorController.getText()
-  const { lineEnding } = useDocumentStore.getState()
+  const { lineEnding, revision } = useDocumentStore.getState()
   try {
     const result = await api.fs.writeFile(filePath, text, { expectedMtimeMs, lineEnding })
     if (!result.ok) {
       showConflictNotice(filePath, text)
       return false
     }
-    useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs })
+    if (useDocumentStore.getState().revision === revision) {
+      useDocumentStore.getState().markSaved({ filePath, text, mtimeMs: result.mtimeMs })
+    }
     await api.recents.add(filePath)
-    await api.document.watch(filePath)
+    const current = useDocumentStore.getState()
+    if (current.revision === revision && current.filePath === filePath) {
+      const documentId = await api.document.watch(filePath)
+      const afterWatch = useDocumentStore.getState()
+      if (afterWatch.revision === revision && afterWatch.filePath === filePath) {
+        useDocumentStore.setState({ documentId })
+      }
+    }
     useWorkspaceStore.getState().setNotice(null)
     return true
   } catch (error) {
@@ -174,15 +188,24 @@ export function forgetTrashedFile(filePath: string): void {
 }
 
 export async function renameFile(filePath: string, name: string): Promise<void> {
-  const wasOpen = useDocumentStore.getState().filePath === filePath
+  const startingDocument = useDocumentStore.getState()
+  const wasOpen = startingDocument.filePath === filePath
   try {
     const next = await api.fs.rename(filePath, name)
     if (wasOpen) {
-      // Follow the file: the buffer is unchanged, only its identity moved.
-      const doc = useDocumentStore.getState()
-      doc.load({ filePath: next, text: doc.savedText, mtimeMs: doc.mtimeMs })
+      let current = useDocumentStore.getState()
+      if (current.revision === startingDocument.revision && current.filePath === filePath) {
+        useDocumentStore.setState({ filePath: next, documentId: null })
+      }
       await api.recents.add(next)
-      await api.document.watch(next)
+      current = useDocumentStore.getState()
+      if (current.revision === startingDocument.revision && current.filePath === next) {
+        const documentId = await api.document.watch(next)
+        current = useDocumentStore.getState()
+        if (current.revision === startingDocument.revision && current.filePath === next) {
+          useDocumentStore.setState({ documentId })
+        }
+      }
     }
     await refreshFolder()
   } catch (error) {

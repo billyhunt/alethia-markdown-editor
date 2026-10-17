@@ -1,0 +1,45 @@
+// @vitest-environment node
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+
+const native = vi.hoisted(() => ({ windows: [] as any[], id: 10 }))
+vi.mock('electron', () => ({
+  BrowserWindow: { getAllWindows: () => native.windows },
+  nativeTheme: { shouldUseDarkColors: false },
+  screen: {},
+}))
+vi.mock('../../src/main/security.ts', () => ({ hardenWebContents: vi.fn() }))
+vi.mock('../../src/main/settings.ts', () => ({
+  getSettings: () => ({ windowBounds: { width: 800, height: 600 } }),
+  patchSettings: vi.fn(),
+}))
+vi.mock('../../src/main/watcher.ts', () => ({ closeWatchersFor: vi.fn() }))
+import { noteDocument, windowShowing } from '../../src/main/windows.ts'
+
+let root: string
+
+beforeEach(async () => {
+  root = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-window-identity-'))
+  const win = {
+    id: native.id++,
+    isDestroyed: () => false,
+    isFullScreen: () => false,
+    getNormalBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }),
+  }
+  native.windows = [win]
+})
+
+afterEach(async () => { await fs.rm(root, { recursive: true, force: true }) })
+
+it('matches a symlinked open path to its canonical target window', async () => {
+  const real = path.join(root, 'real.md')
+  const alias = path.join(root, 'alias.md')
+  await fs.writeFile(real, '# note')
+  await fs.symlink(real, alias)
+  const win = native.windows[0]
+  noteDocument(win, alias)
+  expect(windowShowing(real)).toBe(win)
+  expect(windowShowing(alias)).toBe(win)
+})

@@ -33,6 +33,8 @@ export const IPC = {
   windowSetDocument: 'window:setDocument',
   appRendererReady: 'app:rendererReady',
   appGrantDroppedPath: 'app:grantDroppedPath',
+  appPreloadToken: 'app:preloadToken',
+  appOpenLinkedFile: 'app:openLinkedFile',
   menuFileContext: 'menu:fileContext',
   printExportPdf: 'print:exportPdf',
   versionsList: 'versions:list',
