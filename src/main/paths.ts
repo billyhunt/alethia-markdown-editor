@@ -123,6 +123,24 @@ export async function assertWritable(input: unknown): Promise<string> {
   return target
 }
 
+/** Validate a prospective sibling destination using the normal write rules. */
+export async function assertWritableSibling(source: string, destination: unknown): Promise<string> {
+  const from = await assertWritable(source)
+  const target = validatePath(destination)
+  if (path.dirname(target) !== path.dirname(from)) {
+    throw new PathPermissionError('EINVAL: destination must be in the same folder')
+  }
+  const real = await realResolve(target)
+  if (!isMarkdownPath(real)) {
+    throw new PathPermissionError('EPERM: refusing to write a non-markdown file')
+  }
+  const userData = await realOf(app.getPath('userData'))
+  if (real === userData || real.startsWith(userData + path.sep)) {
+    throw new PathPermissionError('EPERM: refusing to write inside userData')
+  }
+  return target
+}
+
 /** Directories are readable when granted as a root. */
 export async function assertReadableDir(input: unknown): Promise<string> {
   const target = validatePath(input)

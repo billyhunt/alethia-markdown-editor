@@ -48,7 +48,7 @@
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--accent);
-  color: #f2f0eb;
+  color: var(--on-accent);
   padding: 0.05em 0.3em;
 }
 
@@ -123,9 +123,26 @@
   font-size: 0.8em;
 }
 
+/* Ordered-list numbers are set a little small, like bullets, so that "1. "
+   fits the 1.6em gutter. The hang widget uses the same font and size, so 1ch
+   here is one character of the number, and the number pulls back by exactly
+   its width. The hang is capped at the gutter so a wide number such as 10.
+   never crosses the line's edge (a quote's rule, the printed page); its text
+   moves along instead. */
+.cm-md-ol-hang,
 .cm-md-ol-mark {
+  --md-ol-scale: 0.85;
   font-family: var(--font-mono);
+  font-size: calc(var(--md-ol-scale) * 1em);
   font-weight: 500;
+}
+
+.cm-md-ol-hang {
+  display: inline-block;
+  margin-left: calc(-1 * min(var(--md-ol-chars, 0) * 1ch, 1.6em / var(--md-ol-scale)));
+}
+
+.cm-md-ol-mark {
   color: var(--accent);
 }
 

@@ -2,10 +2,12 @@ import { EditorView } from '@codemirror/view'
 import { EditorSelection } from '@codemirror/state'
 import { createEditorState } from './createEditor.ts'
 import { EDITOR_COMMANDS } from './commands.ts'
+import { SEARCH_COMMANDS, searchFocusPlan } from './searchCommands.ts'
 import { focusMode, modesCompartment, typewriterMode } from './extensions/modes.ts'
 import { documentPath, documentPathCompartment } from './extensions/documentPath.ts'
 import { forgetImageFailures } from './widgets/ImageWidget.ts'
-import type { EditorCommand } from '../../shared/ipc.ts'
+import { useDocumentStore } from '../state/documentStore.ts'
+import type { EditorCommand, SearchCommand } from '../../shared/ipc.ts'
 
 /**
  * Owns the single EditorView. React mounts it once and never re-renders it --
@@ -65,6 +67,9 @@ class EditorController {
 
   /** Notifies listeners without an edit, e.g. after loading a document. */
   private emit(text: string): void {
+    // This state is read by close/replace/quit handlers, so it must follow
+    // every editor transaction synchronously rather than through a UI timer.
+    useDocumentStore.getState().setDirty(text !== useDocumentStore.getState().savedText)
     for (const listener of this.docListeners) listener(text)
   }
 
@@ -123,6 +128,22 @@ class EditorController {
     view.dispatch({
       effects: documentPathCompartment.reconfigure(documentPath.of(filePath)),
     })
+  }
+
+  /**
+   * Runs a search command from the menu. Focus is only taken when it is not
+   * already inside the editor (which includes the search panel's own fields)
+   * and not in some other field that is being typed into; see
+   * `searchFocusPlan`.
+   */
+  search(command: SearchCommand): boolean {
+    const view = this.view
+    if (!view) return false
+
+    const plan = searchFocusPlan(view, document.activeElement)
+    if (plan === 'ignore') return false
+    if (plan === 'take-focus') view.focus()
+    return SEARCH_COMMANDS[command](view)
   }
 
   /** Swaps focus/typewriter modes without rebuilding the document state. */

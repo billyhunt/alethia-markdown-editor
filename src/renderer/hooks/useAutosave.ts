@@ -28,9 +28,12 @@ export function useAutosave(): void {
         const { autosave } = useWorkspaceStore.getState()
         const { dirty, filePath } = useDocumentStore.getState()
         if (!autosave || !dirty || !filePath || running) return
+        const attemptedText = editorController.getText()
         running = true
         void save().finally(() => {
           running = false
+          const current = useDocumentStore.getState()
+          if (current.dirty && current.filePath && editorController.getText() !== attemptedText) schedule()
         })
       }, IDLE_MS)
     }

@@ -6,7 +6,7 @@ import { getSettings, patchSettings } from './settings.ts'
 import type { HostCommand } from '../shared/ipc.ts'
 import type { ThemePreference } from '../shared/settings.ts'
 
-const REPO_URL = 'https://github.com/'
+const REPO_URL = 'https://github.com/billyhunt/alethia-markdown-editor'
 
 /**
  * Menu items stay permanently enabled and the renderer no-ops when there is
@@ -86,8 +86,11 @@ export function buildApplicationMenu(): void {
         // macOS populates this natively from app.addRecentDocument.
         { role: 'recentDocuments', submenu: [{ role: 'clearRecentDocuments' }] },
         { type: 'separator' },
-        cmd('Close File', 'file:close', 'CmdOrCtrl+W'),
-        { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' },
+        // Cmd+W closes the window, as it does everywhere else on macOS.
+        // Closing just the document is the rarer act, so it takes the
+        // modified key.
+        cmd('Close File', 'file:close', 'CmdOrCtrl+Shift+W'),
+        { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+W' },
         { type: 'separator' },
         cmd('Save', 'file:save', 'CmdOrCtrl+S'),
         cmd('Save As…', 'file:saveAs', 'CmdOrCtrl+Shift+S'),
@@ -112,6 +115,24 @@ export function buildApplicationMenu(): void {
         { role: 'pasteAndMatchStyle' },
         { role: 'delete' },
         { role: 'selectAll' },
+        { type: 'separator' },
+        {
+          label: 'Find',
+          submenu: [
+            cmd('Find…', 'edit:find', 'CmdOrCtrl+F'),
+            // CodeMirror has a single panel and it always carries the replace
+            // field, so this opens the same thing Find does. It is here
+            // because nothing else in the app tells anyone that replace
+            // exists.
+            cmd('Find and Replace…', 'edit:findReplace', 'Alt+CmdOrCtrl+F'),
+            cmd('Find Next', 'edit:findNext', 'CmdOrCtrl+G'),
+            cmd('Find Previous', 'edit:findPrevious', 'Shift+CmdOrCtrl+G'),
+            { type: 'separator' },
+            // Apple's default here is Cmd+E, which Format already uses for
+            // Inline Code, so this one deviates deliberately.
+            cmd('Use Selection for Find', 'edit:useSelectionForFind', 'Shift+CmdOrCtrl+E'),
+          ],
+        },
         { type: 'separator' },
         { label: 'Speech', submenu: [{ role: 'startSpeaking' }, { role: 'stopSpeaking' }] },
       ],
