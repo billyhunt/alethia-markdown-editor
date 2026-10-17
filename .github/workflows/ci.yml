@@ -18,10 +18,11 @@ permissions:
 jobs:
   checks:
     name: Typecheck, lint and test
-    # The suite runs against jsdom, not a real Electron runtime, so Linux is
-    # enough for most of it and is faster and cheaper than a macOS runner.
-    # The parts that genuinely depend on macOS (the file watcher and path
-    # realpath handling) are re-run on macOS in the package job below.
+    # The suite runs against jsdom, not a real Electron runtime, so Linux can
+    # run all of it, file watcher tests included (chokidar uses inotify here),
+    # and is faster and cheaper than a macOS runner. The package job below
+    # runs the same suite again on macOS, which is the only place FSEvents and
+    # the /var -> /private/var realpath handling are exercised.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -106,9 +107,9 @@ jobs:
       # change is cheaper than an unverified binary inside the .app.
       - run: npm ci
 
-      # The only OS-coupled code in the repo: the chokidar watcher (FSEvents
-      # here, inotify on Linux) and the /var -> /private/var realpath handling,
-      # which never executes on the Linux job.
+      # Same suite as the Linux job. It is repeated because the chokidar
+      # watcher is OS-coupled (FSEvents here, inotify on Linux) and the
+      # /var -> /private/var realpath handling only matters on macOS.
       - name: Test on macOS
         run: npm test
 

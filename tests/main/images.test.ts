@@ -258,7 +258,11 @@ describe('the open that follows the check', () => {
     for (let i = 0; i < big.length; i += 1) big[i] = i % 251
     await fsp.writeFile(path.join(notes, 'big.png'), big)
     const { body } = await openResolvedImage(await resolve('big.png'))
-    expect(Buffer.from(await new Response(body).arrayBuffer())).toEqual(big)
+    const received = Buffer.from(await new Response(body).arrayBuffer())
+    // Not toEqual: its element-by-element walk of 700 KiB takes seconds once
+    // coverage instrumentation is on, which is most of this test's runtime.
+    expect(received.length).toBe(big.length)
+    expect(received.equals(big)).toBe(true)
   })
 
   it('stops a file that grows after it was measured instead of serving the excess', async () => {
