@@ -129,9 +129,13 @@ function bundle(name: string, options: BundleOptions = {}): string {
 }
 
 /** Runs the verifier, returning its exit code and combined output. */
-function verify(app: string): { code: number; output: string } {
+function verify(app?: string, cwd?: string): { code: number; output: string } {
   try {
-    const stdout = execFileSync('node', [SCRIPT, app], { encoding: 'utf8', stdio: 'pipe' })
+    const stdout = execFileSync('node', app === undefined ? [SCRIPT] : [SCRIPT, app], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      cwd,
+    })
     return { code: 0, output: stdout }
   } catch (error) {
     const failure = error as { status?: number; stdout?: string; stderr?: string }
@@ -160,6 +164,53 @@ describe('verify-package on a sound bundle', () => {
     const result = verify(bundle('good'))
     expect(result.code).toBe(1)
     expect(result.output).toContain('plutil is unavailable')
+  })
+})
+
+describe('verify-package default bundle selection', () => {
+  /** Lays out `release/<directory>/Alethia.app`, packaged `ageSeconds` ago. */
+  function release(directory: string, ageSeconds: number): void {
+    const app = bundle(`release/${directory}/Alethia`)
+    const when = new Date(Date.now() - ageSeconds * 1000)
+    fs.utimesSync(path.join(app, 'Contents/Resources/app.asar'), when, when)
+  }
+
+  it('verifies the freshest bundle, not whichever directory sorts first', () => {
+    // `release/` is never cleaned, so stale output sits beside the fresh
+    // build. Both stale names sort before and after `mac-universal`.
+    release('mac', 3000)
+    release('mac-arm64', 2000)
+    release('mac-universal', 10)
+    const result = verify(undefined, dir)
+    expect(result.output).toContain(`Verifying ${path.join('release', 'mac-universal', 'Alethia.app')}`)
+  })
+
+  it('does not let a stale native-arch bundle beat a fresher one', () => {
+    release('mac-arm64', 3000)
+    release('mac', 3000)
+    release('mac-universal', 5)
+    const result = verify(undefined, dir)
+    expect(result.output).toContain(`Verifying ${path.join('release', 'mac-universal', 'Alethia.app')}`)
+  })
+
+  it('breaks an exact tie by name, independent of listing order', () => {
+    release('mac-universal', 100)
+    release('mac-x64', 100)
+    const asars = ['mac-universal', 'mac-x64'].map((d) =>
+      path.join(dir, 'release', d, 'Alethia.app/Contents/Resources/app.asar'),
+    )
+    const when = fs.statSync(asars[0]).mtime
+    for (const asar of asars) fs.utimesSync(asar, when, when)
+    const result = verify(undefined, dir)
+    // Neither is native, so the name decides.
+    expect(result.output).toContain(`Verifying ${path.join('release', 'mac-universal', 'Alethia.app')}`)
+  })
+
+  it('still honours an explicit path over anything in release/', () => {
+    release('mac-universal', 10)
+    const explicit = bundle('chosen')
+    const result = verify(explicit, dir)
+    expect(result.output).toContain(`Verifying ${explicit}`)
   })
 })
 
@@ -215,6 +266,28 @@ describe('verify-package on broken bundles', () => {
     const result = verify(bundle('preloadless', { files }))
     expect(result.code).toBe(1)
     expect(result.output).toContain('missing /dist-electron/preload.cjs')
+  })
+
+  it('fails when the preload was emitted as ESM', () => {
+    // Electron loads preload.cjs as CommonJS whatever it contains, so an
+    // `export` is a SyntaxError there. The file exists and is non-empty, so
+    // presence and size checks both pass it while the renderer loses its
+    // API bridge.
+    for (const esm of ['export {}', 'import { contextBridge } from "electron"\ncontextBridge.exposeInMainWorld("a", {})']) {
+      const files = goodFiles()
+      files['/dist-electron/preload.cjs'] = esm
+      const result = verify(bundle('esm-preload', { files }))
+      expect(result.code).toBe(1)
+      expect(result.output).toContain('/dist-electron/preload.cjs is not valid CommonJS')
+    }
+  })
+
+  it('accepts a CommonJS preload that uses require and module.exports', () => {
+    const files = goodFiles()
+    files['/dist-electron/preload.cjs'] =
+      '"use strict";\nconst { contextBridge } = require("electron");\ncontextBridge.exposeInMainWorld("a", {});\nmodule.exports = {};'
+    const result = verify(bundle('cjs-preload', { files }))
+    expect(result.output).not.toContain('not valid CommonJS')
   })
 
   it('fails when a font licence is missing', () => {

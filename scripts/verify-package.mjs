@@ -17,29 +17,51 @@
  */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import Module from 'node:module'
 import path from 'node:path'
+import vm from 'node:vm'
 
 /**
  * electron-builder names its output directory after the architecture:
  * `release/mac-arm64`, `release/mac` on Intel, `release/mac-universal` for a
  * universal build. Hardcoding one of those makes this fail on a perfectly
  * good bundle built elsewhere, so the directory is discovered.
+ *
+ * `release/` is not cleaned between builds, so more than one bundle can be
+ * there, and verifying a stale Intel or universal one would certify nothing
+ * about the bundle just built. The most recently packaged one wins (judged by
+ * its app.asar, which every build rewrites); a tie goes to the directory
+ * matching this machine's architecture, then to the name, so the choice never
+ * depends on directory listing order. An explicit path argument bypasses all
+ * of this.
  */
 function defaultApp() {
+  const native = process.arch === 'arm64' ? 'mac-arm64' : 'mac'
+  const candidates = []
   try {
     for (const entry of fs.readdirSync('release')) {
       if (!entry.startsWith('mac')) continue
       const candidate = path.join('release', entry, 'Alethia.app')
-      if (fs.existsSync(candidate)) return candidate
+      if (!fs.existsSync(candidate)) continue
+      const asar = path.join(candidate, 'Contents/Resources/app.asar')
+      const stamp = fs.statSync(fs.existsSync(asar) ? asar : candidate).mtimeMs
+      candidates.push({ candidate, entry, stamp })
     }
   } catch {
     // No release directory at all; fall through to the conventional path so
     // the error names something recognisable.
   }
-  return 'release/mac-arm64/Alethia.app'
+  candidates.sort(
+    (a, b) =>
+      b.stamp - a.stamp ||
+      Number(b.entry === native) - Number(a.entry === native) ||
+      a.entry.localeCompare(b.entry),
+  )
+  return candidates[0]?.candidate ?? 'release/mac-arm64/Alethia.app'
 }
 
 const app = process.argv[2] ?? defaultApp()
+console.log(`Verifying ${app}`)
 const failures = []
 const fail = (message) => failures.push(message)
 
@@ -238,6 +260,19 @@ if (!fs.existsSync(archive)) {
       const contents = asar.read(entry)
       if (contents === null) fail(`${entry} has no readable content`)
       else if (contents.length === 0) fail(`${entry} is empty`)
+      else if (entry === '/dist-electron/preload.cjs') {
+        // Electron loads a `.cjs` preload as CommonJS whatever it contains,
+        // so a preload bundled as ESM has an `export` or `import` that is a
+        // SyntaxError there: the file exists, is non-empty, and the renderer
+        // never gets its API bridge. Compile it the way CommonJS would, as a
+        // function body. Compiling never runs it, and `new vm.Script` needs
+        // no Electron.
+        try {
+          new vm.Script(Module.wrap(contents.toString('utf8')), { filename: entry })
+        } catch (error) {
+          fail(`${entry} is not valid CommonJS (was it emitted as ESM?): ${error.message}`)
+        }
+      }
     }
 
     // The renderer and the fonts arrive as hashed assets, so they cannot be
