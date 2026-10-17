@@ -404,7 +404,7 @@ export const inlineDecorations = ViewPlugin.fromClass(
       // The tree check matters: lezer parses large documents incrementally in
       // idle time, and without it the bottom of a long file stays raw.
       const treeChanged = syntaxTree(update.state) !== syntaxTree(update.startState)
-      // The path arrives after the text for a new note (autosave files it),
+      // The path arrives after the text for a new note (after Save As),
       // and every image widget embeds it, so they must be rebuilt.
       const pathChanged =
         update.state.facet(documentPath) !== update.startState.facet(documentPath)

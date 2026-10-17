@@ -6,7 +6,7 @@
 export const IMAGE_SCHEME = 'alethia-image'
 
 /** True for a source the scheme will never serve: remote, data, or another scheme. */
-export const isRemoteSource = (src: string): boolean => /^[a-z][a-z0-9+.-]*:/i.test(src)
+export const isRemoteSource = (src: string): boolean => /^\s*[a-z][a-z0-9+.-]*:/i.test(src)
 
 /** The URL the renderer puts in an `<img src>` for a local image. */
 export function imageRequestUrl(docPath: string, src: string): string {

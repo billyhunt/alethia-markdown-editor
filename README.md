@@ -146,7 +146,7 @@ document does not rewrite every line.
 - **Remote images are not loaded.** The renderer makes no network requests,
   deliberately; an `![](https://…)` shows a placeholder saying so.
 - **Images in a document that has never been saved** show a placeholder until
-  autosave files it, since a relative path has nothing to be relative to.
+  it is saved with Save As, since a relative path has nothing to be relative to.
 - **Images inside table cells** show their alt text, not the picture. Click
   into the table to see the source.
 - **The automated suite covers core regressions, not every workflow.** It

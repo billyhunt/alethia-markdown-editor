@@ -7,7 +7,9 @@ import path from 'node:path'
 // touches it.
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] }, protocol: {} }))
 
-const { MAX_IMAGE_BYTES, destinationToPath, resolveImageRequest, serveImage, statusForError } =
+const {
+  MAX_IMAGE_BYTES, destinationToPath, openResolvedImage, resolveImageRequest, serveImage, statusForError,
+} =
   await import('../../src/main/images.ts')
 const { imageRequestUrl } = await import('../../src/shared/images.ts')
 const { PathPermissionError } = await import('../../src/main/paths.ts')
@@ -77,7 +79,7 @@ describe('destinationToPath', () => {
 
 describe('images the scheme serves', () => {
   it('serves an image beside the document', async () => {
-    await expect(resolve('photo.png')).resolves.toEqual({
+    await expect(resolve('photo.png')).resolves.toMatchObject({
       filePath: path.join(notes, 'photo.png'),
       mimeType: 'image/png',
     })
@@ -117,6 +119,23 @@ describe('images the scheme serves', () => {
 })
 
 describe('images the scheme refuses', () => {
+  it('refuses an image reached through a symlinked directory that points out', async () => {
+    await fsp.symlink(path.join(root, 'elsewhere'), path.join(notes, 'linked'))
+    await expect(resolve('linked/outside.png')).rejects.toThrow(/outside the document folder/)
+    expect((await serve('linked/outside.png')).status).toBe(403)
+  })
+
+  it('serves a symlink that stays inside the folder', async () => {
+    await fsp.symlink(path.join(notes, 'photo.png'), path.join(notes, 'alias.png'))
+    await expect(resolve('alias.png')).resolves.toMatchObject({
+      filePath: path.join(notes, 'photo.png'),
+    })
+  })
+
+  it('treats a source with leading whitespace and a scheme as remote', async () => {
+    await expect(resolve(' https://example.com/a.png')).rejects.toThrow(/not a local image/)
+  })
+
   it('refuses a source that climbs out of the document folder', async () => {
     await expect(resolve('../elsewhere/outside.png')).rejects.toThrow(/outside the document folder/)
   })
@@ -199,7 +218,82 @@ describe('images the scheme refuses', () => {
   })
 })
 
+describe('the open that follows the check', () => {
+  it('refuses a symlink swapped in after the path was validated', async () => {
+    // The validation is of a path; whatever occupies it at open time is what
+    // would be read. Swap the checked file for a link to a file outside.
+    const resolved = await resolve('photo.png')
+    await fsp.rm(resolved.filePath)
+    await fsp.symlink(path.join(root, 'elsewhere', 'outside.png'), resolved.filePath)
+    await expect(openResolvedImage(resolved)).rejects.toMatchObject({ code: 'ELOOP' })
+  })
+
+  it('refuses a different file swapped in at the validated path', async () => {
+    const resolved = await resolve('photo.png')
+    const impostor = path.join(notes, 'impostor.png')
+    await fsp.writeFile(impostor, 'not the validated file')
+    await fsp.rename(impostor, resolved.filePath)
+    await expect(openResolvedImage(resolved)).rejects.toThrow(/changed after it was checked/)
+  })
+
+  it('refuses a validated directory swapped for a symlink to another', async () => {
+    // The final component stays a regular file, so O_NOFOLLOW alone passes;
+    // the identity check is what catches a parent that now leads elsewhere.
+    await fsp.writeFile(path.join(notes, 'assets', 'photo.png'), PNG)
+    await fsp.writeFile(path.join(root, 'elsewhere', 'photo.png'), 'other bytes')
+    const resolved = await resolve('assets/photo.png')
+    await fsp.rename(path.join(notes, 'assets'), path.join(notes, 'assets-moved'))
+    await fsp.symlink(path.join(root, 'elsewhere'), path.join(notes, 'assets'))
+    await expect(openResolvedImage(resolved)).rejects.toThrow(/changed after it was checked/)
+  })
+
+  it('streams the validated file untouched', async () => {
+    const { body, size } = await openResolvedImage(await resolve('photo.png'))
+    expect(size).toBe(PNG.length)
+    expect(Buffer.from(await new Response(body).arrayBuffer())).toEqual(PNG)
+  })
+
+  it('streams a file larger than one chunk without altering it', async () => {
+    const big = Buffer.alloc(700 * 1024)
+    for (let i = 0; i < big.length; i += 1) big[i] = i % 251
+    await fsp.writeFile(path.join(notes, 'big.png'), big)
+    const { body } = await openResolvedImage(await resolve('big.png'))
+    expect(Buffer.from(await new Response(body).arrayBuffer())).toEqual(big)
+  })
+
+  it('stops a file that grows after it was measured instead of serving the excess', async () => {
+    const resolved = await resolve('photo.png')
+    const { body } = await openResolvedImage(resolved)
+    await fsp.appendFile(resolved.filePath, Buffer.alloc(1024, 1))
+    await expect(new Response(body).arrayBuffer()).rejects.toThrow(/grew/)
+  })
+
+  it('releases the file when the reader gives up', async () => {
+    const { body } = await openResolvedImage(await resolve('photo.png'))
+    await body.cancel()
+    // A second cancel must not double-close.
+    await expect(body.cancel()).resolves.toBeUndefined()
+  })
+})
+
 describe('serveImage: the handler boundary', () => {
+  it('is never served from a cache, so an edited image shows its new pixels', async () => {
+    const response = await serve('photo.png')
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(response.headers.get('Content-Length')).toBe(String(PNG.length))
+    await fsp.writeFile(path.join(notes, 'photo.png'), 'edited')
+    expect(await (await serve('photo.png')).text()).toBe('edited')
+  })
+
+  it('refuses an image with 403 once its document is not open', async () => {
+    open.clear()
+    expect((await serve('photo.png')).status).toBe(403)
+  })
+
+  it('refuses a non-image extension with 403', async () => {
+    expect((await serve('secrets.txt')).status).toBe(403)
+  })
+
   it('returns the bytes with the image type and defensive headers', async () => {
     const response = await serve('photo.png')
     expect(response.status).toBe(200)

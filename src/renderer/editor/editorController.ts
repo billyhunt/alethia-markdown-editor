@@ -113,7 +113,7 @@ class EditorController {
    * Tells the editor where the document lives, so relative image sources can
    * resolve. Driven from the document store rather than passed to
    * setDocument, because the path becomes known in a different place from the
-   * text (a new document gets a path only when autosave files it).
+   * text (a new document gets a path only after Save As).
    */
   setFilePath(filePath: string | null): void {
     this.filePath = filePath

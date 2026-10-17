@@ -1,3 +1,4 @@
+import { constants as fsConstants } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { BrowserWindow, protocol } from 'electron'
@@ -20,8 +21,8 @@ import { IMAGE_SCHEME, isRemoteSource } from '../shared/images.ts'
  * of the folder, an absolute path elsewhere on disk, a symlink pointing out,
  * and a symlink or hardlink to a non-image are all refused. Every decision is
  * made on real paths and on the final resolved file, and the bytes are read
- * from the same descriptor that was checked, so what is validated is what is
- * served.
+ * from a descriptor opened without following symlinks and confirmed to be the
+ * validated file, so what is validated is what is served.
  */
 
 const IMAGE_EXTENSIONS = new Set([
@@ -55,6 +56,9 @@ export interface ResolvedImage {
   /** Absolute, real path of the image to read. */
   filePath: string
   mimeType: string
+  /** Identity of the file at `filePath` when it was validated. */
+  dev: bigint
+  ino: bigint
 }
 
 /** The extension policy, applied to whatever path it is handed. */
@@ -158,27 +162,90 @@ export async function resolveImageRequest(
     throw new PathPermissionError('EPERM: image is outside the document folder')
   }
 
-  return { filePath: realTarget, mimeType }
+  // Remember which file was validated, so the open can prove it got the same
+  // one. See openResolvedImage.
+  const { dev, ino } = await fs.stat(realTarget, { bigint: true })
+  return { filePath: realTarget, mimeType, dev, ino }
 }
 
+/** Bytes read from disk per step; also the most a single image ever holds in memory at once. */
+const CHUNK_BYTES = 256 * 1024
+
+const sameFile = (a: { dev: bigint; ino: bigint }, b: { dev: bigint; ino: bigint }): boolean =>
+  a.dev === b.dev && a.ino === b.ino
+
 /**
- * Reads the image the resolver approved. Opened once and then inspected and
- * read through that one descriptor, so a swap on disk between check and read
- * cannot substitute a different file, and the size cap applies to the bytes
- * actually returned.
+ * Opens the image the resolver approved and streams it.
+ *
+ * The resolver validated a *path*; between that and this open, something may
+ * have replaced what the path names. So the open itself refuses to follow a
+ * symlink at the final component (`O_NOFOLLOW`), and the descriptor that
+ * results is then checked against the identity (device and inode) of the file
+ * that was validated. A swapped-in symlink fails the open; a swapped-in file,
+ * or a symlinked parent directory leading somewhere else, fails the identity
+ * check. Either way what is read is the validated file or nothing.
+ * `O_NONBLOCK` keeps a FIFO swapped in at that spot from hanging the open.
+ *
+ * The body is read from that descriptor in bounded chunks and never exceeds
+ * the size that was checked: a file that grows after the check ends the
+ * stream with an error rather than serving more than the cap, and nothing
+ * buffers (or copies) the whole image.
  */
-export async function readResolvedImage(filePath: string): Promise<Buffer> {
-  const handle = await fs.open(filePath, 'r')
+export async function openResolvedImage(
+  resolved: ResolvedImage,
+): Promise<{ body: ReadableStream<Uint8Array>; size: number }> {
+  const handle = await fs.open(
+    resolved.filePath,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
+  )
+  let size: number
   try {
-    const stat = await handle.stat()
+    const stat = await handle.stat({ bigint: true })
     if (!stat.isFile()) throw Object.assign(new Error('not a file'), { code: 'ENOTDIR' })
-    if (stat.size > MAX_IMAGE_BYTES) throw Object.assign(new Error('too large'), { code: 'EFBIG' })
-    const bytes = await handle.readFile()
-    if (bytes.length > MAX_IMAGE_BYTES) throw Object.assign(new Error('too large'), { code: 'EFBIG' })
-    return bytes
-  } finally {
+    if (!sameFile(stat, resolved)) {
+      throw new PathPermissionError('EPERM: image changed after it was checked')
+    }
+    if (stat.size > BigInt(MAX_IMAGE_BYTES)) {
+      throw Object.assign(new Error('too large'), { code: 'EFBIG' })
+    }
+    size = Number(stat.size)
+  } catch (error) {
+    await handle.close()
+    throw error
+  }
+
+  let sent = 0
+  let closed = false
+  const close = async (): Promise<void> => {
+    if (closed) return
+    closed = true
     await handle.close()
   }
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        // One byte past what is left, so growth shows up as an over-read.
+        const chunk = new Uint8Array(Math.min(CHUNK_BYTES, size - sent + 1))
+        const { bytesRead } = await handle.read(chunk, 0, chunk.length, null)
+        if (bytesRead > size - sent) {
+          throw Object.assign(new Error('image grew while being read'), { code: 'EFBIG' })
+        }
+        if (bytesRead === 0) {
+          if (sent !== size) throw new Error('image shrank while being read')
+          await close()
+          controller.close()
+          return
+        }
+        sent += bytesRead
+        controller.enqueue(bytesRead === chunk.length ? chunk : chunk.subarray(0, bytesRead))
+      } catch (error) {
+        await close()
+        controller.error(error)
+      }
+    },
+    cancel: close,
+  })
+  return { body, size }
 }
 
 /** Maps a failure to the status the widget can act on. Exported for tests. */
@@ -198,9 +265,10 @@ const IMAGE_HEADERS = (mimeType: string): Record<string, string> => ({
   // An SVG served here has an origin of its own. Should it ever be embedded
   // by something other than <img>, it gets no script and no fetch.
   'Content-Security-Policy': "default-src 'none'; sandbox",
-  // Re-renders of the same image (scroll, print) reuse the bytes rather than
-  // re-reading disk; a changed file has a new mtime and misses.
-  'Cache-Control': 'private, max-age=60',
+  // Never reused: the file behind a URL can be edited at any moment, and a
+  // cached copy would show the old pixels. The URL carries no version, so
+  // there is nothing to key a cache on; reading a local file is cheap.
+  'Cache-Control': 'no-store',
 })
 
 /**
@@ -216,13 +284,12 @@ export async function serveImage(
   },
 ): Promise<Response> {
   try {
-    const { filePath, mimeType } = await resolveImageRequest(
-      requestUrl,
-      deps.isReadableDoc,
-      deps.isOpenDoc,
-    )
-    const bytes = await readResolvedImage(filePath)
-    return new Response(new Uint8Array(bytes), { status: 200, headers: IMAGE_HEADERS(mimeType) })
+    const resolved = await resolveImageRequest(requestUrl, deps.isReadableDoc, deps.isOpenDoc)
+    const { body, size } = await openResolvedImage(resolved)
+    return new Response(body, {
+      status: 200,
+      headers: { ...IMAGE_HEADERS(resolved.mimeType), 'Content-Length': String(size) },
+    })
   } catch (error) {
     const status = statusForError(error)
     const message = status === 500 ? 'error' : ((error as Error).message ?? 'refused')
