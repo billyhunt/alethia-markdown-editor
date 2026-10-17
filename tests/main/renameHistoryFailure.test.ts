@@ -13,7 +13,8 @@ const { grantFile } = await import('../../src/main/paths.ts')
 const { renameFile } = await import('../../src/main/files.ts')
 let root: string
 beforeAll(async () => {
-  root = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-rename-history-'))
+  // Real path: main resolves document paths, and macOS's tmpdir is a symlink.
+  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-rename-history-')))
   state.root = path.join(root, 'userData')
 })
 afterAll(async () => { await fs.rm(root, { recursive: true, force: true }) })

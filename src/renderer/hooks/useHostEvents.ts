@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { api } from '../api.ts'
 import { dispatchHostCommand } from '../services/commandDispatcher.ts'
 import { handleFileChange } from '../services/externalChanges.ts'
-import { adoptFolder, ensureClosable, openPath } from '../services/fileOps.ts'
+import { adoptFolder, ensureClosable, openPath, openRouted } from '../services/fileOps.ts'
 import { useWorkspaceStore } from '../state/workspaceStore.ts'
 import { useDocumentStore } from '../state/documentStore.ts'
 import { editorController } from '../editor/editorController.ts'
@@ -22,10 +22,7 @@ export function useHostEvents(): void {
         void handleFileChange(event)
       }),
       api.on.folderTree((tree) => useWorkspaceStore.getState().setFolder(tree)),
-      api.on.openPath((event) => {
-        if (event.kind === 'dir') void adoptFolder(event.path)
-        else void openPath(event.path)
-      }),
+      api.on.openPath((event) => void openRouted(event)),
       api.on.closeRequested(() => {
         void ensureClosable().then((closable) => {
           if (closable) void api.window.close({ force: true })
@@ -50,13 +47,13 @@ export function useHostEvents(): void {
       const pending = ready.pendingPaths
 
       if (pending.length > 0) {
-        // Restore the workspace first, so a file opened from Finder arrives
-        // with a populated sidebar rather than an empty one.
-        if (session.folder) await adoptFolder(session.folder)
+        // Main only routes opens to a window with no session of its own, so
+        // there is nothing to restore alongside them.
         for (const entry of pending) {
           if (entry.kind === 'dir') await adoptFolder(entry.path)
-          else await openPath(entry.path)
+          else await openPath(entry.path, { preferDocument: true, routed: true })
         }
+        await api.window.settleOpen()
         return
       }
 
@@ -64,10 +61,14 @@ export function useHostEvents(): void {
 
       if (session.file) {
         const stat = await api.fs.stat(session.file).catch(() => null)
-        if (stat) {
-          await openPath(session.file)
-          return
-        }
+        // Main restored this window for this file; another window showing it
+        // is not a reason to give it up.
+        if (stat) await openPath(session.file, { routed: true })
+        if (useDocumentStore.getState().filePath === session.file) return
+        // Main still believes this window shows the file it could not open;
+        // without this it would route that path here and never count it as
+        // empty.
+        await api.document.unwatch()
       }
 
       // Nothing to restore: show the bundled tour as an unsaved document, so a

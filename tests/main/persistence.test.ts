@@ -13,7 +13,8 @@ const { getKnown, readTextFile, renameFile, writeTextFile } = await import('../.
 const { snapshotVersion, listVersions, readVersion } = await import('../../src/main/versions.ts')
 let root: string
 beforeAll(async () => {
-  root = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-persistence-'))
+  // Real path: main resolves document paths, and macOS's tmpdir is a symlink.
+  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-persistence-')))
   storage.root = path.join(root, 'userData')
 })
 afterEach(() => vi.restoreAllMocks())
@@ -347,6 +348,7 @@ it('merges destination history and keeps colliding snapshots during rename', asy
   try {
     const from = await file('history-source.md')
     const to = path.join(root, 'history-target.md')
+    grantFile(to) // snapshotVersion now requires a granted path
     await snapshotVersion(from, 'same snapshot')
     await snapshotVersion(to, 'same snapshot')
     const historyDir = path.join(

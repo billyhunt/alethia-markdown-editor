@@ -20,7 +20,8 @@ const { grantFile } = await import('../../src/main/paths.ts')
 const { readTextFile, writeTextFile } = await import('../../src/main/files.ts')
 let root: string
 beforeAll(async () => {
-  root = await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-conflict-race-'))
+  // Real path: main resolves document paths, and macOS's tmpdir is a symlink.
+  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alethia-conflict-race-')))
   state.root = path.join(root, 'userData')
 })
 afterAll(async () => { await fs.rm(root, { recursive: true, force: true }) })

@@ -20,6 +20,7 @@ class EditorController {
   /** Kept so a rebuilt state (setDocument) starts with the right path. */
   private filePath: string | null = null
 
+
   mount(parent: HTMLElement): () => void {
     this.view?.destroy()
     this.view = new EditorView({
@@ -86,6 +87,8 @@ class EditorController {
     })
     view.focus()
   }
+
+
 
   getText(): string {
     return this.view?.state.doc.toString() ?? ''

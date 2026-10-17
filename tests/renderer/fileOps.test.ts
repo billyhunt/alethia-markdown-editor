@@ -7,6 +7,7 @@ const host = vi.hoisted(() => ({
   fs: { readFile: vi.fn(), writeFile: vi.fn(), rename: vi.fn() },
   document: { watch: vi.fn(), unwatch: vi.fn() },
   recents: { add: vi.fn() },
+  window: { revealDocument: vi.fn(async () => false), releaseDocument: vi.fn(async () => undefined) },
 }))
 vi.mock('../../src/renderer/api.ts', () => ({ api: host, unwrapIpcError: String }))
 const buffer = vi.hoisted(() => ({

@@ -1,12 +1,15 @@
 import path from 'node:path'
-import { BrowserWindow, nativeTheme, screen } from 'electron'
+import { app, BrowserWindow, nativeTheme, screen } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { EMPTY_SESSION, type WindowSession } from '../shared/settings.ts'
+import type { OpenPathEvent } from '../shared/api.ts'
+import { canonicalPathSync } from './paths.ts'
 import { hardenWebContents } from './security.ts'
 import { getSettings, patchSettings } from './settings.ts'
 import { closeWatchersFor } from './watcher.ts'
 
-const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+// A packaged app must never be pointed at a dev server by its environment.
+const DEV_SERVER_URL = app.isPackaged ? undefined : process.env.VITE_DEV_SERVER_URL
 const INDEX_HTML = path.join(import.meta.dirname, '../dist/index.html')
 
 interface WindowState {
@@ -14,12 +17,30 @@ interface WindowState {
   forceClose: boolean
   /** What this window should restore, handed over when its renderer starts. */
   session: WindowSession
-  /** The document currently open, so a file can be routed to it. */
+  /** The document currently open (its real path), so a file can be routed to it. */
   filePath: string | null
+  /**
+   * A file routed here that the renderer has not finished opening. Between
+   * the routing decision and the renderer reporting its document, the window
+   * is spoken for: a second file must not be routed into it as well.
+   */
+  incoming: string | null
+  /**
+   * Files this window's own renderer has claimed and is still opening (user
+   * opens, which main did not route). Claimed before the renderer reads
+   * anything, so two windows asked for one file cannot both start.
+   */
+  opening: string[]
+  /** Opens waiting for this window's renderer to start listening. */
+  pending: OpenPathEvent[]
+  /** Unsaved changes, as last reported by the renderer for the title bar. */
+  edited: boolean
   /** The workspace folder, kept for session persistence. */
   folder: string | null
   /** True once its renderer has registered its listeners. */
   ready: boolean
+  /** True once it has painted and been shown for the first time. */
+  shown: boolean
 }
 
 const states = new Map<number, WindowState>()
@@ -33,7 +54,18 @@ export const getQuitting = (): boolean => isQuitting
 const stateFor = (win: BrowserWindow): WindowState => {
   let state = states.get(win.id)
   if (!state) {
-    state = { forceClose: false, session: { ...EMPTY_SESSION }, filePath: null, folder: null, ready: false }
+    state = {
+      forceClose: false,
+      session: { ...EMPTY_SESSION },
+      filePath: null,
+      incoming: null,
+      opening: [],
+      pending: [],
+      edited: false,
+      folder: null,
+      ready: false,
+      shown: false,
+    }
     states.set(win.id, state)
   }
   return state
@@ -43,19 +75,38 @@ export const markForceClose = (win: BrowserWindow): void => {
   stateFor(win).forceClose = true
 }
 
-/** Claims this window's session and marks it ready to receive events. */
-export function takeSession(win: BrowserWindow): WindowSession {
+/**
+ * Claims this window's session and the opens queued for it, and marks it
+ * ready to receive events. Each window drains only its own queue, so a file
+ * can never be picked up by whichever window happened to start first.
+ */
+export function takeSession(win: BrowserWindow): { session: WindowSession; pending: OpenPathEvent[] } {
   const state = stateFor(win)
   state.ready = true
-  return state.session
+  return { session: state.session, pending: state.pending.splice(0) }
 }
-
-export const isReady = (win: BrowserWindow): boolean => states.get(win.id)?.ready === true
 
 /** Records what a window is showing, so files can be routed to it. */
 export function noteDocument(win: BrowserWindow, filePath: string | null): void {
-  stateFor(win).filePath = filePath
+  const state = stateFor(win)
+  state.filePath = filePath
+  state.incoming = null
   persistSessions()
+}
+
+export function noteEdited(win: BrowserWindow, edited: boolean): void {
+  stateFor(win).edited = edited
+}
+
+/**
+ * The renderer finished handling a routed open, whether or not it succeeded.
+ * Returns the file that had been routed here, if any.
+ */
+export function settleIncoming(win: BrowserWindow): string | null {
+  const state = stateFor(win)
+  const incoming = state.incoming
+  state.incoming = null
+  return incoming
 }
 
 export function noteFolder(win: BrowserWindow, folder: string | null): void {
@@ -63,33 +114,100 @@ export function noteFolder(win: BrowserWindow, folder: string | null): void {
   persistSessions()
 }
 
-/** The window already showing this file, if any. */
 /** The document a window currently shows, as it was opened; null for none. */
 export function documentShownBy(win: BrowserWindow): string | null {
   return states.get(win.id)?.filePath ?? null
 }
 
-export function windowShowing(filePath: string): BrowserWindow | null {
+/** The window showing, or about to show, this file (by real path), if any. */
+export function windowShowing(realPath: string, except?: BrowserWindow): BrowserWindow | null {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (states.get(win.id)?.filePath === filePath) return win
+    if (win === except || win.isDestroyed()) continue
+    const state = states.get(win.id)
+    if (
+      state &&
+      (state.filePath === realPath || state.incoming === realPath || state.opening.includes(realPath))
+    ) {
+      return win
+    }
   }
   return null
 }
 
 /**
- * A window that can take a file without displacing anything: no document, and
- * nothing typed into it. Avoids spawning a second window when the first is
- * still the empty one from launch.
+ * Decides, in one synchronous step, who opens a file: the window already
+ * showing or claiming it is returned, otherwise `win` claims it. The check and
+ * the claim must not be separated by an await, or two windows asked at once
+ * would both be told to go ahead and then autosave over each other.
+ */
+export function claimDocument(win: BrowserWindow, realPath: string): BrowserWindow | null {
+  const other = windowShowing(realPath, win)
+  if (!other) stateFor(win).opening.push(realPath)
+  return other
+}
+
+/** Ends a claim, whether the open succeeded, failed or was cancelled. */
+export function releaseDocument(win: BrowserWindow, realPath: string): void {
+  const opening = states.get(win.id)?.opening
+  const index = opening?.indexOf(realPath) ?? -1
+  if (index >= 0) opening?.splice(index, 1)
+}
+
+/**
+ * A window that can take a file without displacing anything: no document,
+ * none on its way, no workspace, and nothing typed into it. Avoids spawning a
+ * second window when the first is still the empty one from launch, without
+ * ever putting a save prompt between the user and the file they asked for, or
+ * hiding a folder the user left open.
  */
 export function vacantWindow(): BrowserWindow | null {
   const focused = BrowserWindow.getFocusedWindow()
   const candidates = focused ? [focused, ...BrowserWindow.getAllWindows()] : BrowserWindow.getAllWindows()
   for (const win of candidates) {
     const state = states.get(win.id)
-    if (state && state.ready && state.filePath === null) return win
+    // A window still loading qualifies too: deliver() queues the file for it.
+    if (
+      state &&
+      state.filePath === null &&
+      state.folder === null &&
+      state.incoming === null &&
+      state.opening.length === 0 &&
+      state.pending.length === 0 &&
+      !state.edited
+    ) {
+      return win
+    }
   }
   return null
 }
+
+/**
+ * Hands an open to one window: straight to its renderer when it is listening,
+ * otherwise into that window's own queue. Either way the window is reserved
+ * at once -- for a folder as much as a file -- so the next routing decision
+ * sees it as taken.
+ */
+export function deliver(win: BrowserWindow, event: OpenPathEvent): void {
+  const state = stateFor(win)
+  state.incoming = event.path
+  if (state.ready) win.webContents.send(IPC.hostOpenPath, event)
+  else state.pending.push(event)
+}
+
+/**
+ * Brings a window to the front, restoring it from the Dock if needed. A window
+ * that has not painted yet is left alone: it shows itself, in front, when it
+ * is ready, and focusing it early would show it blank.
+ */
+export function raise(win: BrowserWindow): void {
+  // Not isVisible(): a minimized window reports false, and must come back.
+  if (win.isDestroyed() || !hasShown(win)) return
+  if (win.isMinimized()) win.restore()
+  win.focus()
+}
+
+/** False until a window has painted and shown itself for the first time. */
+export const hasShown = (win: BrowserWindow): boolean => states.get(win.id)?.shown ?? false
 
 /** Writes the current window layout so the next launch can restore it. */
 export function persistSessions(): void {
@@ -166,7 +284,12 @@ export function createWindow(session: WindowSession = { ...EMPTY_SESSION }): Bro
   state.folder = session.folder
   state.filePath = session.file
 
-  win.once('ready-to-show', () => win.show())
+  // Marked here rather than on 'show', which macOS does not always emit for
+  // a window shown while the app is in the background.
+  win.once('ready-to-show', () => {
+    stateFor(win).shown = true
+    win.show()
+  })
 
   let boundsTimer: NodeJS.Timeout | null = null
   const persistBounds = (): void => {
@@ -188,7 +311,10 @@ export function createWindow(session: WindowSession = { ...EMPTY_SESSION }): Bro
    * windows open, each is asked in turn.
    */
   win.on('close', (event) => {
-    if (stateFor(win).forceClose) return
+    const state = stateFor(win)
+    // A renderer that has not started listening holds no edits, and would
+    // never answer the question, so the window would refuse to close.
+    if (state.forceClose || !state.ready) return
     event.preventDefault()
     win.webContents.send(IPC.hostCloseRequested, { reason: isQuitting ? 'quit' : 'close' })
   })
@@ -221,12 +347,26 @@ export function createWindow(session: WindowSession = { ...EMPTY_SESSION }): Bro
   return win
 }
 
-/** Reopens the windows from the previous session, or one empty window. */
-export function restoreWindows(): void {
+/**
+ * Reopens the windows from the previous session, or one empty window. With
+ * `allowNone`, an empty session opens nothing, because the files the app was
+ * launched with will bring windows of their own.
+ *
+ * Saved files are matched by real path, the identity routing uses, so a
+ * session saved as an alias of a file cannot sit beside a request for the file
+ * itself. Resolved up front and synchronously: the windows exist before
+ * anything else can be routed.
+ */
+export function restoreWindows({ allowNone = false } = {}): BrowserWindow[] {
   const sessions = getSettings().windows
-  if (sessions.length === 0) {
-    createWindow()
-    return
-  }
-  for (const session of sessions) createWindow(session)
+  if (sessions.length === 0) return allowNone ? [] : [createWindow()]
+  // One document, one window, even if a session was saved with a file in two.
+  const claimed = new Set<string>()
+  return sessions.map((saved) => {
+    if (!saved.file) return createWindow(saved)
+    const file = canonicalPathSync(saved.file)
+    if (claimed.has(file)) return createWindow({ ...saved, file: null })
+    claimed.add(file)
+    return createWindow({ ...saved, file })
+  })
 }

@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import path from 'node:path'
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { isReadablePath } from '../shared/markdown.ts'
@@ -14,9 +15,27 @@ import {
 import { getSettings, patchSettings } from './settings.ts'
 import { EMPTY_SESSION } from '../shared/settings.ts'
 import { addRecent, clearRecents, listRecents } from './recents.ts'
-import { grantFile, grantRoot, validatePath } from './paths.ts'
-import { takePendingPaths } from './openWith.ts'
-import { markForceClose, noteDocument, noteFolder, setQuitting, takeSession } from './windows.ts'
+import {
+  assertReadable,
+  canonicalPath,
+  assertReadableDir,
+  grantFile,
+  grantRoot,
+  validatePath,
+} from './paths.ts'
+import {
+  claimDocument,
+  markForceClose,
+  noteDocument,
+  noteEdited,
+  noteFolder,
+  raise,
+  releaseDocument,
+  setQuitting,
+  settleIncoming,
+  takeSession,
+} from './windows.ts'
+import { route } from './openWith.ts'
 import { showFileContextMenu } from './fileMenu.ts'
 import { exportPdf } from './printing.ts'
 import { clearVersions, listVersions, readVersion } from './versions.ts'
@@ -73,7 +92,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.folderList, (_event, root: unknown) => listMarkdownTree(root))
   ipcMain.handle(IPC.folderWatch, async (event, root: unknown) => {
     const win = winOf(event)
-    const target = validatePath(root)
+    const target = await assertReadableDir(root)
     if (win) {
       noteFolder(win, target)
       await watchFolder(win, target)
@@ -90,7 +109,7 @@ export function registerIpcHandlers(): void {
   // --- document watch ------------------------------------------------------
   ipcMain.handle(IPC.docWatch, async (event, filePath: unknown) => {
     const win = winOf(event)
-    const target = validatePath(filePath)
+    const target = await assertReadable(filePath)
     if (win) {
       noteDocument(win, target)
       await watchDocument(win, target)
@@ -140,6 +159,9 @@ export function registerIpcHandlers(): void {
     // Gives the title bar its proxy icon and the red traffic light its dot.
     win.setRepresentedFilename(typeof filePath === 'string' ? filePath : '')
     win.setDocumentEdited(edited === true)
+    // Main routes files away from a window with unsaved work, so it keeps the
+    // flag; it is never trusted to decide whether a close is safe.
+    noteEdited(win, edited === true)
     win.setTitle(
       typeof filePath === 'string' && filePath
         ? (filePath.split('/').pop() ?? 'Alethia')
@@ -147,14 +169,53 @@ export function registerIpcHandlers(): void {
     )
   })
 
+  ipcMain.handle(IPC.windowSettleOpen, (event) => {
+    const win = winOf(event)
+    if (win) settleIncoming(win)
+  })
+  ipcMain.handle(IPC.windowRevealDocument, async (event, filePath: unknown) => {
+    const win = winOf(event)
+    // An unreadable path is shown nowhere; the open that follows reports it.
+    const target = await assertReadable(filePath).catch(() => null)
+    if (!win || !target) return false
+    // Check and claim in one step (no await between): the window that asks
+    // second is sent to the first rather than opening its own copy. The
+    // renderer ends the claim with releaseDocument once its open is over.
+    const other = claimDocument(win, target)
+    if (!other) return false
+    raise(other)
+    return true
+  })
+  ipcMain.handle(IPC.windowReleaseDocument, async (event, filePath: unknown) => {
+    const win = winOf(event)
+    if (win) releaseDocument(win, await canonicalPath(validatePath(filePath)))
+  })
+
+  ipcMain.handle(IPC.windowRerouteOpen, async (event, filePath: unknown) => {
+    const win = winOf(event)
+    if (!win) return
+    // Release the reservation first, so a failure below cannot leave this
+    // window looking like it is about to show the file forever.
+    const routedHere = settleIncoming(win)
+    noteEdited(win, true)
+    const target = await assertReadable(filePath)
+    // Only the file main itself routed here can be passed on, so a renderer
+    // cannot use this to open windows on paths of its choosing.
+    if (target !== routedHere) throw new Error('EPERM: not the file routed to this window')
+    route({ path: target, kind: 'file' })
+  })
+
   // --- app -----------------------------------------------------------------
   ipcMain.handle(IPC.appRendererReady, (event): RendererReadyResult => {
     const win = winOf(event)
+    // Each window restores its own document and folder, and receives only the
+    // opens that were routed to it.
+    const { session, pending } = win
+      ? takeSession(win)
+      : { session: { ...EMPTY_SESSION }, pending: [] }
     return {
-      pendingPaths: takePendingPaths(),
-      // Each window restores its own document and folder rather than a single
-      // application-wide "last file".
-      session: win ? takeSession(win) : { ...EMPTY_SESSION },
+      pendingPaths: pending,
+      session,
       settings: getSettings(),
       platform: process.platform,
       version: app.getVersion(),
@@ -166,6 +227,9 @@ export function registerIpcHandlers(): void {
     const stats = await fs.stat(target)
     if (stats.isDirectory()) return { path: grantRoot(target), kind: 'dir' }
     if (!isReadablePath(target)) throw new Error('EPERM: not a markdown file')
+    // A dropped file has the same one-folder workspace boundary as a file
+    // chosen through the native dialog or opened from Finder.
+    grantRoot(path.dirname(target))
     return { path: grantFile(target), kind: 'file' }
   })
 
@@ -185,6 +249,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.printExportPdf, (event, suggestedName: unknown) =>
     exportPdf(winOf(event), suggestedName),
   )
+
 
   // --- shell ---------------------------------------------------------------
   ipcMain.handle(IPC.shellOpenExternal, (_event, url: unknown) => {
