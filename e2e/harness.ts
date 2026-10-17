@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -27,6 +28,12 @@ export class Sandbox {
   readonly root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'alethia-e2e-')))
   readonly profile = path.join(this.root, 'profile')
   readonly docs = path.join(this.root, 'docs')
+  /**
+   * The process of every app launched against this sandbox, so none outlives
+   * its test. Captured at launch: Playwright refuses `process()` on an app
+   * whose connection has already closed.
+   */
+  readonly processes: ChildProcess[] = []
 
   constructor() {
     fs.mkdirSync(this.profile)
@@ -55,6 +62,11 @@ export class Sandbox {
   }
 
   dispose(): void {
+    // A test that failed before quitting leaves its app running, and
+    // Playwright's own teardown can then wait on it for many minutes.
+    for (const child of this.processes) {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }
     // A just-closed app can still be flushing settings into the profile.
     fs.rmSync(this.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
@@ -67,17 +79,38 @@ export async function launch(sandbox: Sandbox, args: string[] = []): Promise<Ele
     // A dev-server URL in the environment would point the window at Vite.
     if (value !== undefined && key !== 'VITE_DEV_SERVER_URL') env[key] ??= value
   }
-  return electron.launch({ args: ['-r', RAISE_HOOK, MAIN, ...args], env, cwd: ROOT })
+  const app = await electron.launch({ args: ['-r', RAISE_HOOK, MAIN, ...args], env, cwd: ROOT })
+  sandbox.processes.push(app.process())
+  return app
 }
+
+const QUIT_TIMEOUT = 10_000
 
 /**
  * Quits without leaving the next launch a stale lock. Closing a window asks
  * its renderer first, so a test that left a dirty buffer has to accept the
  * prompt it gets, which `quit` does by stubbing the dialog to Don't Save.
+ *
+ * An app that never finishes quitting is killed and the test fails, rather
+ * than hanging until Playwright's worker teardown gives up minutes later and
+ * leaving the process running under the next test.
  */
 export async function quit(app: ElectronApplication): Promise<void> {
-  await answerSaveChanges(app, "Don't Save").catch(() => undefined)
-  await app.close().catch(() => undefined)
+  const closing = (async () => {
+    await answerSaveChanges(app, "Don't Save").catch(() => undefined)
+    await app.close().catch(() => undefined)
+    return 'closed' as const
+  })()
+  let timer: NodeJS.Timeout | undefined
+  const stuck = new Promise<'stuck'>((resolve) => {
+    timer = setTimeout(() => resolve('stuck'), QUIT_TIMEOUT)
+  })
+  const outcome = await Promise.race([closing, stuck])
+  clearTimeout(timer)
+  if (outcome === 'stuck') {
+    app.process().kill('SIGKILL')
+    throw new Error(`The app did not quit within ${QUIT_TIMEOUT / 1000}s`)
+  }
 }
 
 export async function windows(app: ElectronApplication): Promise<WindowInfo[]> {
@@ -198,7 +231,10 @@ export async function answerSaveChanges(
         message: string
       }
       scope.__prompts.push(options.message)
-      return { response: Math.max(0, options.buttons.indexOf(label)), checkboxChecked: false }
+      const response = options.buttons.indexOf(label)
+      // Never fall back to another button: button 0 is Save, which writes.
+      if (response < 0) throw new Error(`No "${label}" button in: ${options.buttons.join(', ')}`)
+      return { response, checkboxChecked: false }
     }) as typeof dialog.showMessageBox
   }, button)
 }

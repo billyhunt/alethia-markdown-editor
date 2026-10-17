@@ -10,12 +10,22 @@ npm ci
 npm run dev
 ```
 
-Before opening a pull request, run the checks that apply to your change:
+Node 26 or newer, which is what CI uses; `.nvmrc` pins it.
+
+Before opening a pull request, run what CI runs, so a red build is not the
+first you hear of a problem:
 
 ```bash
-npm test
+npm run typecheck
 npm run lint
-npm run build
+npm run test:coverage   # coverage has a floor; plain `npm test` skips it
+```
+
+For a change that touches packaging, the build, or anything under `scripts/`:
+
+```bash
+npm run package         # unsigned .app in release/
+npm run verify:package  # checks the bundle is structurally shippable (macOS only)
 ```
 
 ## Testing changes

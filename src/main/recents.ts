@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { getSettings, patchSettings } from './settings.ts'
-import { grantFile, grantRoot, validatePath } from './paths.ts'
+import { assertReadable, grantFile, grantRoot } from './paths.ts'
 
 const MAX_RECENTS = 20
 
@@ -12,16 +12,14 @@ export function listRecents(): string[] {
  * Kept in two places: the native File > Open Recent / Dock menu, and our own
  * settings for the welcome screen.
  */
-export function addRecent(input: unknown): void {
-  const filePath = validatePath(input)
+export async function addRecent(input: unknown): Promise<void> {
+  const filePath = await assertReadable(input)
   const next = [filePath, ...getSettings().recentFiles.filter((p) => p !== filePath)].slice(
     0,
     MAX_RECENTS,
   )
   patchSettings({ recentFiles: next })
   app.addRecentDocument(filePath)
-  // A file we previously opened stays openable across launches.
-  grantFile(filePath)
 }
 
 export function clearRecents(): void {

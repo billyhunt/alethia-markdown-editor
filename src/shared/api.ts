@@ -41,10 +41,18 @@ export interface ReadFileResult {
 export interface WriteFileOptions {
   /** The mtime the renderer last saw. Null or undefined skips the check. */
   expectedMtimeMs?: number | null
+  /** The exact text this document accepted from disk, normalised to LF. */
+  expectedText?: string
   /** Write even though the file changed on disk since it was loaded. */
   force?: boolean
   /** Restored on write; defaults to LF for a document with no origin. */
   lineEnding?: LineEnding
+}
+
+export interface RenameFileResult {
+  path: string
+  /** The prior path if some local version history could not be moved. */
+  historyPath?: string
 }
 
 export type WriteFileResult =
@@ -73,12 +81,18 @@ export interface OpenPathEvent {
   kind: PathKind
 }
 
+/**
+ * What a dropped file turned out to be. `self` is the sidebar's own drag
+ * released back over the window (main started it): nothing to open.
+ */
+export type DroppedPathResult = OpenPathEvent | { kind: 'self' }
+
 export interface CloseRequestedEvent {
   reason: 'close' | 'quit'
 }
 
 export interface RendererReadyResult {
-  /** Queued open-with paths from open-file / argv / second-instance. */
+  /** Opens from Finder, argv or a second launch, routed to this window. */
   pendingPaths: OpenPathEvent[]
   /** What this particular window should restore. */
   session: WindowSession
@@ -137,7 +151,7 @@ export interface MarkdownApi {
      * Renames within the same directory. `name` is a basename, not a path;
      * a markdown extension is enforced. Resolves the new absolute path.
      */
-    rename(path: string, name: string): Promise<string>
+    rename(path: string, name: string): Promise<RenameFileResult>
   }
 
   folder: {
@@ -149,7 +163,7 @@ export interface MarkdownApi {
 
   document: {
     /** Replaces any previous document watch. Emits on.fileChanged. */
-    watch(path: string): Promise<void>
+    watch(path: string): Promise<string | null>
     unwatch(): Promise<void>
   }
 
@@ -175,19 +189,37 @@ export interface MarkdownApi {
     isFullScreen(): Promise<boolean>
     /** Sets title, represented filename (proxy icon) and the edited dot. */
     setDocument(info: DocumentInfo): Promise<void>
+    /** A routed open finished, successfully or not; frees the window for the next. */
+    settleOpen(): Promise<void>
+    /**
+     * Brings forward another window already showing this file. Resolves true
+     * when one did, in which case this window should not open it as well.
+     */
+    revealDocument(path: string): Promise<boolean>
+    /**
+     * Ends the claim revealDocument made when it resolved false, once this
+     * window has finished opening the path, or failed, or been cancelled.
+     */
+    releaseDocument(path: string): Promise<void>
+    /**
+     * Declines a routed open because this window holds unsaved edits main
+     * had not heard about yet; main sends the file to another window.
+     */
+    rerouteOpen(path: string): Promise<void>
   }
 
   app: {
     /** Call once after listeners are registered. Flushes queued open-with paths. */
     rendererReady(): Promise<RendererReadyResult>
     /** Validates and grants a dropped path. Rejects non-markdown files. */
-    grantDroppedPath(path: string): Promise<OpenPathEvent>
+    grantDroppedPath(file: File): Promise<DroppedPathResult>
+    openLinkedFile(href: string, documentId: string): Promise<void>
     /**
      * Turns a sidebar drag into a native file drag, so dropping it in a
      * terminal types its path. Call from dragstart, after preventDefault.
-     * Resolves with the path actually dragged, or null if it was refused.
+     * A refused drag simply does not start.
      */
-    startDrag(target: { path: string }): Promise<string | null>
+    startDrag(target: { path: string }): Promise<void>
   }
 
   versions: {
@@ -218,9 +250,6 @@ export interface MarkdownApi {
     openExternal(url: string): Promise<void>
     showItemInFolder(path: string): Promise<void>
   }
-
-  /** Synchronous; wraps electron.webUtils.getPathForFile for drag and drop. */
-  getPathForFile(file: File): string
 
   on: {
     command(cb: (cmd: HostCommand) => void): Unsubscribe

@@ -31,9 +31,15 @@ export const IPC = {
   windowToggleMaximize: 'window:toggleMaximize',
   windowIsFullScreen: 'window:isFullScreen',
   windowSetDocument: 'window:setDocument',
+  windowSettleOpen: 'window:settleOpen',
+  windowRevealDocument: 'window:revealDocument',
+  windowReleaseDocument: 'window:releaseDocument',
+  windowRerouteOpen: 'window:rerouteOpen',
   appRendererReady: 'app:rendererReady',
   appGrantDroppedPath: 'app:grantDroppedPath',
   appStartDrag: 'app:startDrag',
+  appPreloadToken: 'app:preloadToken',
+  appOpenLinkedFile: 'app:openLinkedFile',
   menuFileContext: 'menu:fileContext',
   printExportPdf: 'print:exportPdf',
   versionsList: 'versions:list',
@@ -73,6 +79,17 @@ export type EditorCommand =
   | 'orderedList'
   | 'horizontalRule'
 
+/**
+ * Search commands, kept apart from `EditorCommand` because the search panel
+ * is a view construct and these need the `EditorView`, not just its state.
+ */
+export type SearchCommand =
+  | 'find'
+  | 'findReplace'
+  | 'findNext'
+  | 'findPrevious'
+  | 'useSelectionForFind'
+
 /** Commands the native menu dispatches into the renderer. */
 export type HostCommand =
   | 'file:new'
@@ -89,5 +106,5 @@ export type HostCommand =
   | 'view:toggleAutosave'
   | 'view:toggleFocusMode'
   | 'view:toggleTypewriterMode'
-  | `edit:${'undo' | 'redo'}`
+  | `edit:${'undo' | 'redo' | SearchCommand}`
   | `format:${Exclude<EditorCommand, 'undo' | 'redo'>}`

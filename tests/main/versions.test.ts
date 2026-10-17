@@ -32,7 +32,7 @@ async function backdate(filePath: string, byMs: number) {
   const dir = path.join(
     USER_DATA,
     'versions',
-    (await import('node:crypto')).createHash('sha1').update(path.resolve(filePath)).digest('hex'),
+    (await import('node:crypto')).createHash('sha1').update(await fs.realpath(filePath)).digest('hex'),
   )
   for (const name of await fs.readdir(dir)) {
     const match = /^(\d+)-([0-9a-f]{8})\.snapshot$/.exec(name)

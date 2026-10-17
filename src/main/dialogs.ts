@@ -15,7 +15,9 @@ export async function showOpenFile(win: BrowserWindow | null): Promise<string | 
   })
   const [chosen] = result.filePaths
   if (result.canceled || !chosen) return null
-  // The dialog is a source main controls, so its result is trustworthy.
+  // A file opens as a one-folder workspace so its siblings and relative images
+  // are usable without giving the renderer authority to choose that folder.
+  grantRoot(path.dirname(chosen))
   return grantFile(chosen)
 }
 
@@ -75,4 +77,13 @@ export async function showError(
     message: title,
     detail: message,
   })
+}
+
+export async function confirmOpenLinkedFile(win: BrowserWindow | null, filePath: string, isLink: boolean): Promise<boolean> {
+  const { response } = await dialog.showMessageBox(win ?? undefined!, {
+    type: 'question', buttons: ['Open', 'Cancel'], defaultId: 0, cancelId: 1,
+    message: isLink ? 'This link points outside the workspace. It is a symbolic link.' : 'Open a linked file outside the current workspace?',
+    detail: filePath,
+  })
+  return response === 0
 }
