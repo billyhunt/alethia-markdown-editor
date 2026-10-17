@@ -1,6 +1,20 @@
 import TurndownService from 'turndown'
 
 /**
+ * Clipboard HTML past this many characters is left to the plain-text paste:
+ * the conversion is synchronous, and a page-sized copy would freeze the editor
+ * for text nobody wanted converted.
+ */
+export const MAX_HTML_LENGTH = 1_000_000
+
+/**
+ * Stands in for the end of every blank line inside a code block while the
+ * document is assembled, so tidying blank lines between blocks cannot tell code
+ * from prose by guessing at the fence. Private-use, and stripped from the input.
+ */
+const BLANK_CODE_LINE = '\uE000'
+
+/**
  * Converts clipboard HTML to markdown, so text copied from a web page or a
  * document keeps its headings, links, lists, emphasis and tables.
  *
@@ -8,30 +22,73 @@ import TurndownService from 'turndown'
  * editors and terminals put plain text on the clipboard wrapped in styled
  * spans or a bare <pre>, and converting that would only add backslash
  * escapes to code.
+ *
+ * A copy of part of a line (a word, a phrase) keeps a space at either end if
+ * the selection had one, since the words around it are in the document.
  */
 export function htmlToMarkdown(html: string): string | null {
+  if (html.length > MAX_HTML_LENGTH) return null
   // DOMParser builds an inert document: no scripts run, nothing loads.
-  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const doc = new DOMParser().parseFromString(html.replaceAll(BLANK_CODE_LINE, ''), 'text/html')
   if (!hasStructure(doc.body)) return null
-  const markdown = converter().turndown(doc.body).trim()
-  return markdown ? collapseBlankLines(markdown) : null
+  const trimmed = converter().turndown(doc.body).trim()
+  if (!trimmed) return null
+  const markdown = collapseBlankLines(trimmed).replaceAll(BLANK_CODE_LINE, '')
+  if (isBlock(markdown)) return markdown
+  const [first, last] = edgeSpaces(doc.body)
+  return `${first ? ' ' : ''}${markdown}${last ? ' ' : ''}`
 }
 
-/** One blank line at most between blocks; code keeps its blank lines. */
+/**
+ * Whether the content starts and ends with a space. Turndown trims both ends,
+ * but a selected " bold " sits between words that are already in the document.
+ * Only a space typed in the text counts: a newline is indentation in the
+ * source, and an image or line break in the way means the text is not at the
+ * edge.
+ */
+function edgeSpaces(body: HTMLElement): [boolean, boolean] {
+  const nodes: Node[] = []
+  const walker = body.ownerDocument.createTreeWalker(body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.nodeType === Node.TEXT_NODE || (node as Element).matches(VOID)) nodes.push(node)
+  }
+  const edge = (list: Node[], test: RegExp): boolean => {
+    for (const node of list) {
+      if (node.nodeType !== Node.TEXT_NODE) return false
+      const text = node.textContent ?? ''
+      if (/\S/.test(text)) return test.test(text)
+      if (text && !text.includes('\n')) return true
+    }
+    return false
+  }
+  return [edge(nodes, /^[ \u00a0]/), edge(nodes.reverse(), /[ \u00a0]$/)]
+}
+
+const VOID = 'img, br, hr, input'
+
+/** One blank line at most between blocks. */
 function collapseBlankLines(markdown: string): string {
   const out: string[] = []
-  let fenceOpen: string | null = null
   for (const line of markdown.split('\n')) {
-    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
-    if (fenceOpen === null) {
-      if (marker) fenceOpen = marker
-      else if (line.trim() === '' && out.length > 0 && out[out.length - 1].trim() === '') continue
-    } else if (marker && marker[0] === fenceOpen[0] && marker.length >= fenceOpen.length && !line.trim().slice(marker.length).trim()) {
-      fenceOpen = null
-    }
+    if (line.trim() === '' && out.length > 0 && out[out.length - 1].trim() === '') continue
     out.push(line)
   }
   return out.join('\n')
+}
+
+/** Whether markdown is made of blocks, which cannot share a line with text. */
+function isBlock(markdown: string): boolean {
+  return markdown.includes('\n') || /^(?:(?:[-*+]|\d+[.)]|#{1,6})\s|>|`{3}|~{3}|\||-{3,}$)/.test(markdown)
+}
+
+/**
+ * Makes converted markdown fit where it lands. A block pasted against text on
+ * its line would merge into that line (`Intro## Plan` is not a heading), so it
+ * is set off from the text before and after it by a blank line.
+ */
+export function fitToLine(markdown: string, before: string, after: string): string {
+  if (!isBlock(markdown)) return markdown
+  return `${/\S/.test(before) ? '\n\n' : ''}${markdown}${/\S/.test(after) ? '\n\n' : ''}`
 }
 
 const STRUCTURE = [
@@ -85,14 +142,15 @@ const columnsOf = (row: Element): number =>
 /**
  * Each table's width and header row, measured once: rows are converted one
  * at a time, and measuring per row would make a large spreadsheet paste
- * quadratic.
+ * quadratic. The header is the first row with cells: a row with none is
+ * dropped from the output, and the divider must follow the row that is not.
  */
 const tableShapes = new WeakMap<Element, { width: number; header: Element | null }>()
 function shapeOf(table: Element) {
   let shape = tableShapes.get(table)
   if (!shape) {
     const rows = Array.from(table.querySelectorAll('tr'))
-    shape = { width: Math.max(0, ...rows.map(columnsOf)), header: rows[0] ?? null }
+    shape = { width: Math.max(0, ...rows.map(columnsOf)), header: rows.find((row) => row.firstElementChild) ?? null }
     tableShapes.set(table, shape)
   }
   return shape
@@ -136,6 +194,7 @@ function converter(): TurndownService {
       return (node as unknown as { isBlock: boolean }).isBlock ? '\n\n' : ''
     },
   })
+  const td: TurndownService = service
   service.remove(['style', 'script', 'noscript', 'meta', 'title', 'head'])
 
   service.addRule('plainWrapper', {
@@ -180,15 +239,33 @@ function converter(): TurndownService {
   })
   // Inline image data and temp-file paths (Word, Outlook) would put
   // megabytes of base64 or a dead path into the document; keep the alt text.
-  service.addRule('localImage', {
-    filter: (node) => node.nodeName === 'IMG' && /^(data|file|blob):/i.test(node.getAttribute('src') ?? ''),
-    replacement: (_content, node) => (node as Element).getAttribute('alt') ?? '',
-  })
-  service.addRule('barePre', {
-    filter: (node) => isBarePre(node),
+  // Alt text, title and address come from the page, so each is made safe to
+  // sit inside ![](): escaped, on one line, with no bracket or space that
+  // could end the address early.
+  const escape = (text: string): string => td.escape(text.replace(/\s+/g, ' ').trim())
+  service.addRule('image', {
+    filter: 'img',
     replacement: (_content, node) => {
-      const code = preText(node as Element)
-      return `\n\n${fence(code)}\n${code}\n${fence(code)}\n\n`
+      const image = node as Element
+      const src = (image.getAttribute('src') ?? '').trim()
+      const alt = escape(image.getAttribute('alt') ?? '')
+      if (!src) return ''
+      if (/^(data|file|blob):/i.test(src)) return alt
+      const address = src.replace(/[\s()<>]/g, (c) => (c === '(' ? '%28' : c === ')' ? '%29' : encodeURIComponent(c)))
+      const title = (image.getAttribute('title') ?? '').replace(/\s+/g, ' ').trim().replace(/[\\"]/g, '\\$&')
+      return `![${alt}](${address}${title ? ` "${title}"` : ''})`
+    },
+  })
+  service.addRule('codeBlock', {
+    filter: 'pre',
+    replacement: (_content, node) => {
+      const element = node as Element
+      const code = preText(element)
+      const language = /language-([\w+#.-]+)/.exec(element.querySelector('code')?.getAttribute('class') ?? '')?.[1] ?? ''
+      const marks = fence(code)
+      // Blank lines are marked so tidying the blocks' spacing leaves them be.
+      const body = code.replace(/^[ \t]*$/gm, (blank) => blank + BLANK_CODE_LINE)
+      return `\n\n${marks}${language}\n${body}\n${marks}\n\n`
     },
   })
   // "- item" rather than Turndown's "-   item", with nested lines indented

@@ -118,3 +118,10 @@ test('inside front matter the plain text is pasted verbatim', async () => {
   expect(saved).not.toContain('*My*')
   await quit(app)
 })
+
+test('a heading pasted right after text starts its own line', async () => {
+  const { app, page, file } = await openAtEnd('glued.md', 'Intro')
+  await paste(page, { html: '<meta charset="utf-8"><h2>Plan</h2>', text: 'Plan' })
+  await savedText(app, page, file, 'Intro\n\n## Plan')
+  await quit(app)
+})

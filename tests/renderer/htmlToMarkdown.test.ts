@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { htmlToMarkdown } from '../../src/renderer/editor/htmlToMarkdown.ts'
+import { MAX_HTML_LENGTH, htmlToMarkdown } from '../../src/renderer/editor/htmlToMarkdown.ts'
 
 // Chromium puts this wrapper around every HTML copy.
 const clip = (body: string) => `<meta charset="utf-8">${body}`
@@ -202,5 +202,38 @@ describe('pasting rich text as markdown', () => {
   it('caps a runaway colspan', () => {
     const markdown = htmlToMarkdown(clip('<table><tr><td colspan="100000">x</td></tr></table>')) ?? ''
     expect(markdown.split('\n')[0].split('|').length).toBeLessThanOrEqual(1002)
+  })
+
+  it('keeps the blank lines of code that opens a list item or sits deep in a list', () => {
+    const code = '<pre><code>a\n\n\n\nb</code></pre>'
+    const kept = (markdown: string | null) => (markdown ?? '').split('\n').filter((line) => line.trim() === '')
+    // "- ```" is a fence behind a list marker; four spaces in is still code.
+    expect(kept(htmlToMarkdown(clip(`<ul><li>${code}</li></ul>`)))).toHaveLength(3)
+    expect(kept(htmlToMarkdown(clip(`<ul><li>x<ul><li>y${code}</li></ul></li></ul>`)))).toHaveLength(1 + 3)
+  })
+
+  it('does not lose a header to an empty leading row', () => {
+    const html = clip('<table><tr></tr><tr><td>x</td><td>y</td></tr><tr><td>1</td><td>2</td></tr></table>')
+    expect(htmlToMarkdown(html)).toBe(['| x | y |', '| --- | --- |', '| 1 | 2 |'].join('\n'))
+  })
+
+  it('keeps one space at either edge of an inline fragment', () => {
+    expect(htmlToMarkdown(clip('<strong> bold </strong>'))).toBe(' **bold** ')
+    expect(htmlToMarkdown(clip('<p><b>bold</b></p>\n'))).toBe('**bold**')
+  })
+
+  it('escapes the alt text of an image that is replaced by it', () => {
+    const alt = '# Title\n```\n[t](https://evil.example)'
+    const html = clip(`<p><img alt="${alt}" src="data:image/png;base64,AAAA"> <b>a</b></p>`)
+    expect(htmlToMarkdown(html)).toBe('\\# Title \\`\\`\\` \\[t\\](https://evil.example) **a**')
+  })
+
+  it('escapes the alt text and encodes the address of a normal image', () => {
+    const html = clip('<p><b>a</b> <img alt="x](https://evil.example) [y" src="https://example.com/a b(1).png"></p>')
+    expect(htmlToMarkdown(html)).toBe('**a** ![x\\](https://evil.example) \\[y](https://example.com/a%20b%281%29.png)')
+  })
+
+  it('declines HTML past the size cap', () => {
+    expect(htmlToMarkdown(clip(`<b>x</b>${' '.repeat(MAX_HTML_LENGTH)}`))).toBeNull()
   })
 })
