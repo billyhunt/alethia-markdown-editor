@@ -54,6 +54,13 @@ examples from the sidebar.
 Click into a rendered table or equation to edit its source, then move the caret
 away to see it rendered again. The example files are bundled with packaged builds.
 
+## Style guide
+
+Alethia's visual language is documented as a live specimen, a rulebook, a drop-in
+stylesheet and a design-token file. Read it on the
+[published site](https://www.billyhunt.com/alethia-markdown-editor/docs/style-guide/),
+or browse [`docs/style-guide/`](docs/style-guide/) in the repository.
+
 ## Building
 
 ```bash
@@ -171,3 +178,7 @@ document does not rewrite every line.
   document statistics, table navigation, path grants, and line-ending
   preservation. Native file dialogs, printing, session restore, and external
   file-change prompts still need manual release testing.
+
+## License
+
+Released under the MIT License (Massachusetts Institute of Technology). See [LICENSE](LICENSE).

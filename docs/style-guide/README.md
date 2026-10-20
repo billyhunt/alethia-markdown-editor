@@ -5,19 +5,42 @@
 This folder is Alethia's visual language, packaged so you can use it outside
 the editor. Every value here comes from the app's own stylesheets
 (`src/renderer/styles/`, `src/renderer/editor/theme.ts`). Where the guide goes
-further than the app, it says so.
+further than the app, it says so (§12). Where the two disagree, the app wins
+and this guide is wrong: fix the guide.
 
-| File | Use it for |
+| File | Role |
 |---|---|
+| `index.html` | Start here. Orients a visitor, links to everything below, and shows every token and component live, in light and dark, drawn by `alethia.css`. Its contrast table is computed in the browser from `alethia.css`, so it cannot drift. |
 | `README.md` | The rules and why they exist. Read this before you design anything new. |
-| `alethia.css` | Drop-in stylesheet: fonts, tokens, `.al-*` chrome, `.al-prose` for plain HTML, code colours, print. Inert until an element opts in (§14). |
-| `tokens.json` | The same tokens in the W3C Design Tokens Format Module 2025.10 (DTCG), for Figma plugins, Style Dictionary, Terrazzo and similar tools. |
-| `index.html` | A live specimen. Open it to check a theme, a component or a print run. |
-| `fonts/` | The five WOFF2 files the system uses (Latin subset), with their OFL licences. |
-| `assets/alethia-icon.svg` | The app icon. |
+| `alethia.css` | Drop-in stylesheet: fonts, tokens, `.al-*` chrome, `.al-prose` for plain HTML, code colours, print. Inert until an element opts in (§14). The machine-readable source for every value in this guide. |
+| `tokens.json` | The same tokens in the Design Tokens Community Group (DTCG) Format Module 2025.10, for Figma plugins, Style Dictionary, Terrazzo and similar tools. |
+| `fonts/` | The five WOFF2 files the system uses (Latin subset), with their SIL Open Font License (OFL) texts. |
 
-To view the specimen, serve the folder with `python3 -m http.server` (browsers
-block web fonts on `file://`) and open `index.html`.
+The app icon is not copied here: `index.html` reads it from `build/icon.svg`,
+and the screenshots from `docs/screenshots/`, so there is one of each.
+
+To view the specimen, serve the repository root (browsers block web fonts on
+`file://`) and open `/docs/style-guide/`:
+
+```sh
+python3 -m http.server 8000
+```
+
+### Where it lives in the app
+
+| Concern | File |
+|---|---|
+| Tokens, fonts, dark mode | `src/renderer/styles/index.css` |
+| App chrome: titlebar, sidebar, bars, buttons | `src/renderer/styles/shell.css` |
+| Rendered markdown (`.cm-md-*`) | `src/renderer/styles/editor.css` |
+| CodeMirror structure (measure, caret, panels) and the code palette | `src/renderer/editor/theme.ts` |
+| Print overrides | `src/renderer/styles/print.css` |
+| Icons | `build/icon.svg` (app), `src/renderer/components/icons.tsx` (UI) |
+| Window size, sidebar width, theme source | `src/shared/settings.ts`, `src/main/windows.ts` |
+
+Structural `.cm-*` overrides belong in `theme.ts`, not in a stylesheet:
+CodeMirror injects its base theme after the app's CSS, so an equal-specificity
+rule in plain CSS loses.
 
 ---
 
@@ -29,7 +52,7 @@ covered by rendering, and uncovers itself wherever the caret is. The look
 follows from that:
 
 - **Nothing is softened.** No rounded corners, no shadows, no gradients, no
-  translucency. A thing is either there, hard-edged, or it isn't.
+  translucent surfaces. A thing is either there, hard-edged, or it isn't.
 - **Emphasis is a fill.** Important things get a solid block of colour behind
   them, not a tint, glow or underline.
 - **Structure is a rule.** Panes, bars and tables are divided by solid lines of
@@ -110,8 +133,8 @@ together, without any special cases.
 ### 2.3 The two oranges
 
 The hot orange `#ff3b00` is the identity of the system, and it is
-unreadable as text on paper: **3.14:1**, below WCAG AA. So the system splits
-it:
+unreadable as text on paper: **3.14:1**, below the Web Content Accessibility
+Guidelines (WCAG) AA floor of 4.5:1 for text. So the system splits it:
 
 - **`--accent-hot`** is for *fills*. Ink on hot is **5.29:1** and passes AA.
   Hot as text on ink or black is fine too (5.29:1 and 5.88:1). That is why
@@ -132,28 +155,34 @@ Rules:
 
 ### 2.4 Contrast reference
 
-| Pair | Ratio | WCAG |
-|---|---|---|
-| Ink on paper / paper on ink | 16.58 | AAA |
-| Stone on paper | 5.86 | AA |
-| Stone light on ink | 7.23 | AAA |
-| Rust on paper | 5.62 | AA |
-| Hot light on ink | 5.97 | AA |
-| Ink on hot | 5.29 | AA |
-| Hot on paper | **3.14** | Fails for text. Fills only. |
-| Paper on rust (light inline code) | 5.62 | AA |
-| Ink on hot light (dark inline code) | 5.97 | AA |
-| Paper on hot light | **2.78** | Fails. Never put paper text on the dark-mode accent. |
-| Ink on blush | 14.85 | AAA |
-| Paper on ember | 11.84 | AAA |
-| Sand on black | 13.61 | AAA |
-| Hot tint on black | 9.49 | AAA |
-| Ash on black | 5.86 | AA |
+WCAG 2 relative-luminance ratios, computed from the hex values above. Text
+needs 4.5:1 (AA) or 7:1 (AAA); large text and UI marks need 3:1. The same
+table is computed live in `index.html`, so if the two ever differ, the CSS has
+changed and this one is stale.
+
+| Pair | Where | Ratio | WCAG |
+|---|---|---|---|
+| Ink on paper / paper on ink | Body text, both themes | 16.58 | AAA |
+| Stone on paper | Muted text, light | 5.86 | AA |
+| Stone light on ink | Muted text, dark | 7.23 | AAA |
+| Rust on paper | `--accent` text, light: bullets, numbers, status identity | 5.62 | AA |
+| Hot light on ink | `--accent` text, dark | 5.97 | AA |
+| Ink on hot | Current row, banner, link, bold table cell | 5.29 | AA |
+| Hot on ink / hot on black | Fence label and code keywords, light / dark well | 5.29 / 5.88 | AA |
+| Hot on paper | Nowhere. **Fails for text.** Fills only. | **3.14** | Fail |
+| Paper on rust | Inline code, light | 5.62 | AA |
+| Ink on hot light | Inline code, dark | 5.97 | AA |
+| Paper on hot light | Nowhere. **Fails.** Never paper text on the dark accent. | **2.78** | Fail |
+| Ink on blush | Selection and row hover, light | 14.85 | AAA |
+| Paper on ember | Selection and row hover, dark | 11.84 | AAA |
+| Sand on ink / on black | Code strings, light / dark well | 12.23 / 13.61 | AAA |
+| Hot tint on ink / on black | Code types, light / dark well | 8.54 / 9.49 | AAA |
+| Ash on ink / on black | Code comments and operators, light / dark well | 5.27 / 5.86 | AA |
 
 ### 2.5 Code colours
 
-The code well is black in both themes, so code uses one light-on-dark set
-and never switches.
+The code well is ink `#111111` in light mode and black `#000000` in dark, so
+code uses one light-on-dark set and never switches.
 
 | Token | Value | Tokens |
 |---|---|---|
@@ -186,12 +215,12 @@ highlight.js `hljs-*` classes and Prism `.token.*` classes.
 | Face | Weights | Role | Token |
 |---|---|---|---|
 | **Archivo** | 400, 600 | Reading: body text, prose | `--font-prose` |
-| **Archivo Black** | 400 | Shouting: h1–h4, blockquotes, the wordmark. Always in capitals. | `--font-display` |
+| **Archivo Black** | 400 | Shouting: h1–h4, blockquotes, the wordmark, the image placeholder. Always in capitals. | `--font-display` |
 | **DM Mono** | 400, 500 | Everything that isn't content: chrome, labels, buttons, file names, counts, tables, code, h5–h6 | `--font-mono` |
 
-All three are SIL Open Font License and are bundled rather than fetched. The
-app works offline, and its content security policy allows no network
-requests. Do the same anywhere it matters.
+All three are under the SIL Open Font License (OFL) and are bundled rather
+than fetched. The app works offline, and its content security policy allows
+no network requests. Do the same anywhere it matters.
 
 Only the weights above exist. Italics are synthesised by the browser: Archivo
 for `em`, DM Mono for code comments. If you need a weight that isn't listed,
@@ -220,8 +249,8 @@ from one number.
 | h2 | Archivo Black | 1.55em | −0.02em | 1.05 | CAPS |
 | h3 | Archivo Black | 1.2em | −0.02em | 1.05 | CAPS |
 | h4 | Archivo Black | 1.02em | 0 | 1.05 | CAPS |
-| h5 | DM Mono 500 | 0.85em | +0.12em | 1.5 | As written |
-| h6 | DM Mono 500, muted | 0.85em | +0.12em | 1.5 | As written |
+| h5 | DM Mono 500 | 0.85em | +0.12em | 1.5 | CAPS |
+| h6 | DM Mono 500, muted | 0.85em | +0.12em | 1.5 | CAPS |
 | Blockquote | Archivo Black | 1.05em | 0 | 1.35 | CAPS |
 | Strong | Archivo 600 | inherit | | | |
 | Inline code | DM Mono | 0.88em | | | |
@@ -231,7 +260,8 @@ from one number.
 | Front matter | DM Mono | 0.8em | +0.04em | | |
 
 Below h4, the display face stops reading as a heading, so h5 and h6 switch to
-the mono label voice.
+the mono label voice. They stay in capitals: every heading level shares the
+`.cm-md-heading` class, and only the face, size and tracking change.
 
 ### 3.4 Chrome scale
 
@@ -239,9 +269,9 @@ All chrome type is DM Mono, in `rem`, so it doesn't scale with the document.
 
 | Token | Size | Tracking | Case | Used for |
 |---|---|---|---|---|
-| `--size-micro` | 0.62rem | +0.1em | CAPS | Small inline actions (*Clear*) |
+| `--size-micro` | 0.62rem | +0.1em | CAPS | Small inline actions (*Clear*); the muted *Recent* heading in the empty sidebar |
 | `--size-label` | 0.66rem | +0.08 to 0.1em | CAPS | Tabs, status bar, badges |
-| `--size-ui` | 0.7rem | +0.06 to 0.08em | CAPS | Buttons, toolbar, code-fence language label (+0.16em) |
+| `--size-ui` | 0.7rem | +0.06 to 0.08em | CAPS | Buttons, toolbar, workspace switcher (500, +0.06em), code-fence language label (+0.16em) |
 | `--size-note` | 0.72rem | +0.02em (titlebar +0.1em CAPS) | Sentence | Banners, empty states, titlebar name |
 | `--size-row` | 0.75rem | +0.02em | As written | File rows, outline rows, inputs |
 | `--size-panel` | 0.78rem | | | Find/replace panel |
@@ -275,7 +305,7 @@ status bar, where the whole line is uppercased.
 | Token | Weight | Used for |
 |---|---|---|
 | `--rule-thin` | 2px | Button and input borders, table cells, toolbar group dividers, the text caret, focus outline |
-| `--rule` | 3px | Structure: sidebar edge, toolbar and tab underlines, status bar top, banner bottom, front-matter rule |
+| `--rule` | 3px | Structure: sidebar edge, workspace switcher, toolbar and tab underlines, status bar top, banner bottom, search panel bottom, front-matter rule, image frame (dashed for a placeholder) |
 | `--rule-heavy` | 6px | Horizontal rule in prose |
 | `--rule-slab` | 8px | Blockquote |
 
@@ -316,15 +346,15 @@ descenders.
 ┌──────────────────────────────────────────────────────────┐
 │ ● ● ●  ▯  SHOWCASE.MD ■                   ← titlebar 38px │  ink band
 ├──────────────┬───────────────────────────────────────────┤
-│ FILES│OUTLINE│ H1 H2 H3 ¶ ┃ B I S ` ┃ LINK QUOTE …       │  toolbar
-│──────┴───────│━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│  3px rule
-│ ▾ notes      │ banner (only when a decision is needed)   │  hot band
-│   alpha.md   │                                           │
-│ ■ showcase.md│        ┌──── 46rem measure ────┐          │
-│   vtest.md   │        │ FIELD NOTES           │          │
-│              │        │ Body text …           │          │
-│   260px      ┃        └───────────────────────┘          │
-│              ┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│  3px rule
+│ NOTES       ▾│ H1 H2 H3 ¶ ┃ B I S ` ┃ LINK QUOTE …       │  switcher, toolbar
+│━━━━━━━━━━━━━━│━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│  3px rules
+│FILES│OUTL│HIST│ banner (only when a decision is needed)   │  tabs, hot band
+│━━━━━━━━━━━━━━│                                           │  3px rule
+│ ▾ notes      │        ┌──── 46rem measure ────┐          │
+│   alpha.md   │        │ FIELD NOTES           │          │
+│ ■ showcase.md│        │ Body text …           │          │
+│   vtest.md   ┃        └───────────────────────┘          │
+│   260px      ┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│  3px rule
 │              ┃ 95 WORDS · 667 CHARACTERS     SHOWCASE.MD │  status bar
 └──────────────┴───────────────────────────────────────────┘
 ```
@@ -332,7 +362,7 @@ descenders.
 | Measure | Value |
 |---|---|
 | Titlebar height | 38px (`--titlebar-h`). Starts 84px in, to clear the macOS traffic lights |
-| Sidebar width | 260px by default (`--sidebar-w`), user-resizable |
+| Sidebar width | 260px by default, user-resizable. The app stores it in settings; `--sidebar-w` is the export's name for it |
 | Window default | 1100 × 760 |
 | Tree/outline indent | 8px + 12px per level |
 | Icon button | 26 × 26px |
@@ -350,6 +380,7 @@ the content column is where the air is.
 | Context | Padding |
 |---|---|
 | Tree / list row | 0.3rem 0.6rem |
+| Workspace switcher | 0.5rem 0.6rem |
 | Tab | 0.55rem 0 |
 | Button | 0.4rem 0.8rem |
 | Toolbar button | 0.4rem 0.5rem, min-width 2.1rem |
@@ -365,7 +396,8 @@ the content column is where the air is.
 ## 6. Components
 
 All of these exist in the app. The `.al-*` classes in `alethia.css` reproduce
-them for plain HTML.
+them for plain HTML. Together they make the window in §5.1; `index.html`
+builds it live from these classes.
 
 ### Titlebar — `.al-titlebar`
 An ink band (`--border` background, `--bg` text), 38px high. Holds the
@@ -379,10 +411,17 @@ same mark for any "pending" state.
 ### Icon button — `.al-icon-button`
 26px square, transparent, inherits colour. On hover: a hot fill with ink.
 
+### Workspace switcher — `.al-workspace`
+The open folder's name, sitting above the tabs like a vault name: a full-width
+button in UI-size mono caps (500, +0.06em), padding 0.5rem 0.6rem, with a
+muted `▾` on the right and a 3px rule underneath. Hover is a `--selection`
+fill, like a row, because it behaves like one: it opens the list of recent
+folders. With no folder open it reads "No folder".
+
 ### Tabs — `.al-tabs`
-Equal-width cells, label-size mono caps (500, +0.08em), with a 3px rule
-underneath. The active tab inverts. There is no underline indicator and no
-pill.
+Equal-width cells (FILES, OUTLINE, HISTORY), label-size mono caps (500,
++0.08em), with a 3px rule underneath. The active tab inverts. There is no
+underline indicator and no pill.
 
 ### Rows — `.al-row`
 Mono 0.75rem, +0.02em, left-aligned, full width. They take three states:
@@ -441,6 +480,11 @@ Muted mono at note size, in full sentences that say what to do next: "No
 file open. Right-click a file to see its history." Add a button only when
 there is exactly one obvious action ("Open Folder…").
 
+### List heading — `.al-list-heading`
+A muted micro-size caps label above a short list inside an empty state
+(RECENT, above the recent folders), margin 1rem above and 0.25rem below. It
+is the only heading the chrome has; it labels, it does not shout.
+
 ### Interaction model
 
 | Meaning | Treatment |
@@ -461,7 +505,7 @@ layer.
 
 | Element | Treatment |
 |---|---|
-| **Headings** | See §3.3. h1–h4 are display caps; h5–h6 are mono. |
+| **Headings** | See §3.3. h1–h4 are display caps; h5–h6 are mono caps. |
 | **Strong** | Archivo 600 with a 3px hot underline *behind* the text (inset shadow). |
 | **Emphasis** | Italic. Nothing else. |
 | **Strikethrough** | 2px line, text drops to `--text-muted`. |
@@ -470,11 +514,12 @@ layer.
 | **Horizontal rule** | A 6px solid bar. |
 | **Blockquote** | An 8px slab on the left, 1em gap, Archivo Black caps at 1.05em, leading 1.35. Never a `>`. Never italic. |
 | **Bullets** | Square glyphs in `--accent` at 0.8em, hung in a 1.6em gutter: `▪` at even depths, `▫` at odd. |
-| **Ordered lists** | Mono 500 numbers in `--accent` at 0.85em, hung in the same gutter. (The 0.85em size and the hang come from PR #50.) |
+| **Ordered lists** | Mono 500 numbers in `--accent` at 0.85em, hung in the same gutter. The hang is capped at the gutter, so `10.` pushes its text along rather than crossing a quote's slab or the page edge. |
 | **Tasks** | Bullet, then a native checkbox with `accent-color: var(--accent)`. Done items go muted and are struck through. |
 | **Code block** | A solid black slab, square, full measure, mono 0.85em, padding 0.5em 1em. The language is set top right in hot mono caps, 0.7rem, +0.16em. |
 | **Table** | Mono 0.85em, 2px ink cell borders, head row inverted in caps (+0.12em, 500). A cell containing **bold** fills entirely with hot, because a chip floating inside a cell reads as a mistake. |
-| **Image** | Inline with the text (`inline-block`, middle-aligned), at most the measure wide and `60vh` tall, with a 3px `--border` rule around it. (From PR #42.) |
+| **Image** | Inline with the text (`inline-block`, middle-aligned), at most the measure wide and `60vh` tall, with a 3px `--border` rule around it. |
+| **Image placeholder** | When an image cannot be shown (document unsaved, remote source, file not found): the alt text (or the path) in Archivo Black at 0.85em inside a 3px *dashed* `--border` box, padding 0.5em 0.8em, with the reason under it at 0.7 opacity in a full sentence ("Image not found"). A not-found image's rule turns `--accent`. App only; `.al-prose` has no placeholder. |
 | **Display math** | Centred, 0.3em vertical padding (KaTeX). |
 | **Front matter** | Mono 0.8em, +0.04em, muted, behind a 3px muted rule. |
 
@@ -514,24 +559,28 @@ The native window background is set to the theme ground (`#111111` or
 ## 9. Print
 
 Print targets monochrome devices, including thermal printers, where solid
-black is free and the orange would land as a muddy mid-grey.
+black is free and the orange would land as a muddy mid-grey. Fills that carry
+meaning stay; inline fills become rules.
 
-- The page is white, not cream, because cream dithers to a full-page grey.
-- Everything orange turns black.
-- **Slabs stay solid.** The code well stays black with white text, and the
-  table head and bold cells stay black with white text. Backgrounds are
-  forced with `print-color-adjust: exact`.
-- **Inline runs are ruled, not filled.** Solid black is hard to read at body
-  size, so links get a 2px underline offset 2px, and inline code gets a 1px
-  box.
-- Code colours collapse to white and greys (`#d0d0d0` strings, `#b0b0b0`
-  comments and operators). Italic comments carry the distinction that colour
-  used to.
-- Chrome is hidden. Focus-mode dimming is cancelled. Headings never end a
-  page, and tables don't split.
-- Page margins: 18mm top and bottom, 16mm left and right (`@page`). That is
-  the one rule in `alethia.css` that cannot be scoped to an element, so it
-  applies to whatever page is being printed.
+| Element | Screen | Print |
+|---|---|---|
+| Ground | Paper `#f2f0eb` | White. Cream dithers to a full-page grey |
+| Text, rules, bands | Ink | Black |
+| Orange, both tokens | `#ff3b00`, `#b52900` | Black. A mid-grey under black text is muddy |
+| Code well | Ink or black slab, orange tokens | Black slab, white tokens; strings `#d0d0d0`, comments and operators `#b0b0b0`, comments still italic |
+| Fence label | Hot on the slab | White on the slab |
+| Table head, bold cell | Ink band, hot fill | Black fill, white text |
+| Strong | 3px hot underline | 3px black underline |
+| Link | Hot chip | 2px underline, offset 2px, no fill |
+| Inline code | `--accent` chip | 1px black box: the one 1px line in the system (§4.1) |
+| Bullets, numbers | `--accent` | Black |
+| Focus dim | 25% opacity | 100% |
+| Chrome | Visible | Hidden: titlebar, sidebar, toolbar, status bar, banner, search panel |
+| Page | | 18mm top and bottom, 16mm sides (`@page`). Headings never end a page; tables do not split |
+
+Backgrounds are forced with `print-color-adjust: exact`, or the slabs would
+vanish. The `@page` rule is the one thing in `alethia.css` that cannot be
+scoped to an element: it applies to whatever document is being printed.
 
 ---
 
@@ -553,11 +602,12 @@ draw it.
 so they invert and go hot with their row. The set is tiny on purpose: label
 with words in mono caps before reaching for an icon.
 
-### App icon (`assets/alethia-icon.svg`)
+### App icon (`build/icon.svg`)
 A hot orange tile (`#ff3b00`, macOS mask `rx=224` on 1024), with a 36px ink
 rule inset 64px that follows the mask's corners, and a black Greek **α** set
 in a serif. It's the editor's hot table cell, grown into a tile. The rule
-stays inside the app-switcher mask, including at the corners.
+stays inside the app-switcher mask, including at the corners. The other SVGs
+in `build/` are unshipped candidates; do not treat them as variants.
 
 ### Wordmark
 "ALETHIA" in Archivo Black caps, tracking −0.02em. Pair it with ἀλήθεια in
@@ -569,17 +619,19 @@ system monospace. Load the Greek subset if that matters.
 
 ## 12. Gaps between the app and this guide
 
-The export fixes or extends a few things that the app does not do yet:
+The export fixes or extends a few things that the app does not do yet. When
+the app catches up, delete the row.
 
 | Topic | App today | This guide |
 |---|---|---|
-| Inline code in dark mode | Fixed on `fix/dark-inline-code`: the app gains `--on-accent`, so dark inline code is ink on `#ff5722` (5.97:1). Before that it was paper (2.78:1). | Same |
-| Keyboard focus | No visible focus style on chrome buttons | 2px `--accent` outline, offset 2px, on `:focus-visible` |
+| Keyboard focus | No focus style of its own: chrome buttons get Chromium's default ring, the rename input and the editor set `outline: none` | 2px `--accent` outline, offset 2px, on `:focus-visible` |
 | Link hover | None (links open with ⌘-click) | Inverts to an ink band |
 | Disabled button | Not used | Dashed 2px rule, muted text, no hover |
 | Text-on-fill colour | `#111111` hard-coded per rule | `--on-hot` token |
 | Unused tokens | `--panel`, `--panel-fg`, `--accent-ink` are defined but never read (the search panel is set on `--bg`) | Left out |
 | Icons | Rounded caps, `rx=2` file corners: the one soft element in the app | Kept as-is; if you redraw them, use square caps and miter joins |
+| Image placeholder label | Asks for weight 700 in Archivo Black, which is bundled at 400 only, so the browser fakes the bold | Not reproduced |
+| Reduced motion | The 200ms focus-dim transition always runs | Off under `prefers-reduced-motion: reduce` |
 | `.al-input` | The rename input exists only while editing, so its 2px rule is always `--accent`; padding `1px 4px` | Padding matches the app. A resting 2px `--border` rule is added so the input can sit in a form; it turns `--accent` on focus |
 
 ---
@@ -646,8 +698,8 @@ scope element, or on any element inside it:
 
 ### Rendered markdown (static sites, docs, READMEs)
 Wrap the generated HTML in `.al-prose`. Put a code block's language in
-`data-lang` on the `<pre>`. GFM task lists, tables with `align`, and
-highlight.js or Prism output are styled as-is.
+`data-lang` on the `<pre>`. GitHub Flavored Markdown (GFM) task lists, tables
+with `align`, and highlight.js or Prism output are styled as-is.
 
 ### Tailwind
 
@@ -681,13 +733,13 @@ Or use `alethia.css` with `classHighlighter` from `@lezer/highlight`, which
 emits the `tok-*` classes styled here.
 
 ### Design tools
-Import `tokens.json` (W3C DTCG Format Module 2025.10). Colours are `srgb`
+Import `tokens.json` (DTCG Format Module 2025.10). Colours are `srgb`
 objects with a `hex` fallback; sizes are `{ value, unit }` in `px` or `rem`.
 DTCG has no `em`, so values the CSS sets in `em` (the content type scale,
 letter-spacing, the list gutter) are plain `number` tokens under `font-scale`,
-`tracking` and `size.list-gutter`: multiples of the element's font size. Semantic colours take
-their light value as `$value` and carry the dark alias under
-`$extensions["com.alethia.mode"]`, which importers may ignore.
+`tracking` and `size.list-gutter`: multiples of the element's font size.
+Semantic colours take their light value as `$value` and carry the dark alias
+under `$extensions["com.alethia.mode"]`, which importers may ignore.
 
 ### Slides, posters, social images
 Use paper ground, one display-caps headline, mono caps for the kicker and
@@ -710,3 +762,6 @@ it needs less on it instead.
 - Don't use pure white or pure black grounds on screen. Pure black is only
   for the dark-mode code well, and white is only for print.
 - Don't animate for attention.
+- Don't float a chip inside a table cell. Fill the cell.
+- Don't fetch a font or an asset from the network.
+- Don't add a colour without adding its print override (§9).

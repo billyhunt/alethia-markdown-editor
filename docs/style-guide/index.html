@@ -3,21 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Alethia — style specimen</title>
-    <link rel="icon" href="assets/alethia-icon.svg" />
+    <title>Alethia style guide</title>
+    <meta name="description" content="Alethia's visual language, shown live: paper ground, hard black rules, one hot orange." />
+    <link rel="icon" href="../../build/icon.svg" />
     <link rel="stylesheet" href="alethia.css" />
     <style>
-      /* Specimen-page layout only. Everything visual comes from alethia.css. */
+      /*
+       * Page layout only. Every colour, face, size and rule on this page comes
+       * from alethia.css; the hex labels and the contrast table are read from
+       * it at load, so this file holds no copy of the values.
+       */
+      .sg-skip { position: absolute; left: 1rem; top: -4rem; z-index: 20; padding: 0.4rem 0.8rem; background: var(--accent-hot); color: var(--on-hot); font-family: var(--font-mono); font-size: var(--size-ui); letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none; }
+      .sg-skip:focus { top: 1rem; }
       .sg-wrap { max-width: 72rem; margin: 0 auto; padding: 0 2rem 6rem; }
       .sg-section { padding: 3rem 0; border-top: var(--rule) solid var(--border); }
-      .sg-section > header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 2rem; }
-      .sg-num { font-family: var(--font-mono); font-size: var(--size-ui); letter-spacing: 0.16em; color: var(--accent); }
-      .sg-h { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 1.55rem; letter-spacing: -0.02em; line-height: 1.05; text-transform: uppercase; }
+      .sg-h { margin: 0 0 1.5rem; font-family: var(--font-display); font-weight: 400; font-size: 1.55rem; letter-spacing: -0.02em; line-height: 1.05; text-transform: uppercase; }
+      .sg-h3 { margin: 2rem 0 1rem; font-family: var(--font-display); font-weight: 400; font-size: 1.02rem; letter-spacing: 0; line-height: 1.05; text-transform: uppercase; }
       .sg-lede { max-width: 46rem; margin: 0 0 2rem; line-height: 1.65; }
+      .sg-lede a, .sg-note a { padding: 0 0.2em; background: var(--accent-hot); color: var(--on-hot); text-decoration: none; }
+      .sg-lede a:hover, .sg-note a:hover { background: var(--border); color: var(--bg); }
       .sg-cover { padding: 5rem 0 3rem; display: grid; grid-template-columns: 1fr auto; gap: 2rem; align-items: end; }
       .sg-cover h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(3rem, 10vw, 7.5rem); line-height: 0.9; letter-spacing: -0.03em; text-transform: uppercase; }
       .sg-cover p { margin: 1.5rem 0 0; max-width: 34rem; line-height: 1.65; }
       .sg-cover img { width: 9rem; height: 9rem; }
+      .sg-nav { display: flex; flex-wrap: wrap; gap: 0; border-top: var(--rule-thin) solid var(--border); border-bottom: var(--rule-thin) solid var(--border); margin-bottom: 3rem; }
+      .sg-nav a { padding: 0.55rem 0.8rem; color: var(--text); font-family: var(--font-mono); font-size: var(--size-label); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none; }
+      .sg-nav a:hover { background: var(--accent-hot); color: var(--on-hot); }
+      .sg-nav a[href$='.md'], .sg-nav a[href$='.css'], .sg-nav a[href$='.json'], .sg-nav a[href^='http'] { color: var(--accent); }
       .sg-grid { display: grid; gap: 0; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); border-top: var(--rule-thin) solid var(--border); border-left: var(--rule-thin) solid var(--border); }
       .sg-swatch { border-right: var(--rule-thin) solid var(--border); border-bottom: var(--rule-thin) solid var(--border); }
       .sg-chip { height: 6rem; display: flex; align-items: flex-end; padding: 0.6rem; font-family: var(--font-mono); font-size: var(--size-ui); letter-spacing: 0.08em; text-transform: uppercase; }
@@ -35,58 +47,118 @@
       .sg-window { border: var(--rule) solid var(--border); height: 44rem; display: grid; grid-template-rows: var(--titlebar-h) 1fr; overflow: hidden; }
       .sg-window .al-shell { grid-template-rows: 1fr; min-height: 0; }
       .sg-window .al-titlebar { padding-left: 0.75rem; }
+      .sg-window .al-toolbar { overflow-x: auto; }
+      /* The window is narrower than the app's, so long lines wrap instead of squeezing. */
+      .sg-window .al-banner, .sg-window .al-banner-actions, .sg-window .al-statusbar, .sg-window .al-statusbar-right { flex-wrap: wrap; }
+      .sg-window .al-banner > :first-child { flex: 1 1 16rem; }
       .sg-lights { display: inline-flex; gap: 8px; margin-right: 2.5rem; }
       .sg-lights i { width: 12px; height: 12px; border-radius: 50%; background: var(--text-muted); }
-      .sg-dont { opacity: 0.9; }
       .sg-dont .sg-demo-label { color: var(--accent); }
       .sg-theme { margin-left: auto; display: flex; border: var(--rule-thin) solid var(--bg); }
       .sg-theme button { border: none; background: transparent; color: var(--bg); font-family: var(--font-mono); font-size: var(--size-label); letter-spacing: 0.1em; text-transform: uppercase; padding: 0.3rem 0.6rem; cursor: pointer; }
       .sg-theme button[aria-pressed='true'] { background: var(--bg); color: var(--text); }
       .sg-sticky { position: sticky; top: 0; z-index: 10; }
-      @media print { .sg-sticky, .sg-theme { display: none; } .sg-window { height: auto; } }
+      .sg-contrast { max-width: none; padding: 0; margin: 0; }
+      .sg-contrast table { width: 100%; }
+      .sg-contrast td:first-child, .sg-contrast td:nth-child(n + 3) { white-space: nowrap; }
+      .sg-shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 2rem; }
+      .sg-shots figure { margin: 0; }
+      .sg-shots img { display: block; width: 100%; height: auto; border: var(--rule) solid var(--border); }
+      .sg-shots figcaption { padding: 0.6rem 0; font-family: var(--font-mono); font-size: var(--size-note); letter-spacing: 0.02em; color: var(--text-muted); }
+      .sg-shots figure:first-child { grid-column: 1 / -1; }
+      .sg-note { max-width: 46rem; margin: 1.5rem 0 0; line-height: 1.65; }
+      .sg-probe { position: absolute; width: 0; height: 0; overflow: hidden; }
+      .sg-foot { padding: 2rem 0 0; border-top: var(--rule) solid var(--border); font-family: var(--font-mono); font-size: var(--size-note); letter-spacing: 0.02em; color: var(--text-muted); }
+
+      @media (max-width: 48rem) {
+        .sg-wrap { padding: 0 1rem 4rem; }
+        .sg-cover { grid-template-columns: 1fr; padding-top: 3rem; }
+        .sg-cover img { width: 6rem; height: 6rem; }
+        .sg-row { grid-template-columns: 1fr; gap: 0.35rem; }
+        .sg-face { font-size: 1.8rem; }
+        .sg-window { --sidebar-w: 10.5rem; height: 36rem; }
+        .sg-window .al-banner-actions { flex: 1 1 100%; }
+        .sg-pair, .sg-shots { grid-template-columns: 1fr; }
+        .sg-contrast { overflow-x: auto; }
+        .sg-contrast table { font-size: 0.75em; }
+        .sg-contrast td:first-child { white-space: normal; }
+      }
+
+      @media print {
+        .sg-sticky, .sg-skip, .sg-nav, .sg-print-action { display: none; }
+        .sg-section { break-inside: avoid; }
+        .sg-window { height: auto; }
+        .sg-window .al-toolbar { flex-wrap: wrap; overflow: visible; }
+        .sg-window .al-prose { padding: 2.5rem 2rem; }
+        /* alethia.css hides chrome on paper; here the chrome is the subject. */
+        .sg-window .al-titlebar, .sg-window .al-banner { display: flex !important; }
+        .sg-window .al-sidebar { display: flex !important; }
+        .sg-window .al-toolbar { display: flex !important; }
+        .sg-window .al-statusbar { display: flex !important; }
+      }
     </style>
   </head>
   <body class="al-page">
-    <div class="al-titlebar sg-sticky">
-      <span class="al-titlebar-name">Alethia — style specimen <span class="al-dirty" aria-hidden="true"></span></span>
+    <a class="sg-skip" href="#main">Skip to content</a>
+    <header class="al-titlebar sg-sticky">
+      <span class="al-titlebar-name">Alethia — style guide</span>
       <div class="sg-theme" role="group" aria-label="Theme">
         <button type="button" data-set-theme="auto" aria-pressed="true">Auto</button>
         <button type="button" data-set-theme="light" aria-pressed="false">Light</button>
         <button type="button" data-set-theme="dark" aria-pressed="false">Dark</button>
       </div>
-    </div>
+    </header>
 
-    <main class="sg-wrap">
-      <section class="sg-cover">
+    <main id="main" class="sg-wrap">
+      <section class="sg-cover" aria-labelledby="title">
         <div>
-          <span class="sg-num">ἀλήθεια · 0.1.0-alpha.1</span>
-          <h1>Alethia</h1>
+          <h1 id="title">Alethia</h1>
           <p>
             Paper ground, hard black rules, one hot orange. Nothing is softened, nothing is
             hidden: emphasis is a fill, structure is a rule, and the chrome speaks in small mono
             capitals.
           </p>
+          <p class="sg-note">
+            This page shows the system live, drawn by <a href="alethia.css">alethia.css</a>.
+            Switch the theme in the bar above. The rules and the reasons behind them are in the
+            <a href="https://github.com/billyhunt/alethia-markdown-editor/blob/main/docs/style-guide/README.md">README</a>; the values, for tools, are in
+            <a href="tokens.json">tokens.json</a>. The app's own stylesheets are the source of
+            truth for all of it.
+          </p>
         </div>
-        <img src="assets/alethia-icon.svg" alt="The Alethia app icon: a black alpha in an orange tile" />
+        <img src="../../build/icon.svg" alt="The Alethia app icon: a black alpha in an orange tile" />
       </section>
 
-      <!-- 01 COLOUR -->
-      <section class="sg-section" id="colour">
-        <header><span class="sg-num">01</span><h2 class="sg-h">Colour</h2></header>
+      <nav class="sg-nav" aria-label="Guide">
+        <a href="#colour">Colour</a>
+        <a href="#type">Type</a>
+        <a href="#rules">Rules</a>
+        <a href="#chrome">Chrome</a>
+        <a href="#prose">Prose</a>
+        <a href="#screens">Screens</a>
+        <a href="#mark">Mark</a>
+        <a href="#print">Print</a>
+        <a href="https://github.com/billyhunt/alethia-markdown-editor/blob/main/docs/style-guide/README.md">Rulebook</a>
+        <a href="alethia.css">alethia.css</a>
+        <a href="tokens.json">tokens.json</a>
+        <a href="https://github.com/billyhunt/alethia-markdown-editor/tree/main/src/renderer/styles">App source</a>
+      </nav>
+
+      <section class="sg-section" id="colour" aria-labelledby="colour-h">
+        <h2 class="sg-h" id="colour-h">Colour</h2>
         <p class="sg-lede">
-          Two neutrals and one spot colour. Swatches below follow the current theme, so switch it
-          in the titlebar to see each token's dark value. Contrast is measured against the ground
-          the token is actually used on.
+          Two neutrals and one spot colour. Swatches follow the current theme; the labels show
+          both values. Contrast is measured against the ground the token is actually used on.
         </p>
         <div class="sg-grid">
-          <div class="sg-swatch"><div class="sg-chip" style="background: var(--bg); color: var(--text)">--bg</div><div class="sg-meta"><b>Paper / Ink</b><span>#f2f0eb · dark #111111</span><br />Ground</div></div>
-          <div class="sg-swatch"><div class="sg-chip" style="background: var(--text); color: var(--bg)">--text</div><div class="sg-meta"><b>Ink / Paper</b><span>#111111 · dark #f2f0eb</span><br />16.58:1 on ground</div></div>
-          <div class="sg-swatch"><div class="sg-chip" style="background: var(--text-muted); color: var(--bg)">--text-muted</div><div class="sg-meta"><b>Stone</b><span>#5f5c55 · dark #a3a099</span><br />5.86:1 · dark 7.23:1</div></div>
-          <div class="sg-swatch"><div class="sg-chip" style="background: var(--border); color: var(--bg)">--border</div><div class="sg-meta"><b>Rule / Band</b><span>#111111 · dark #f2f0eb</span><br />Rules and inverted bands</div></div>
-          <div class="sg-swatch"><div class="sg-chip" style="background: var(--accent-hot); color: var(--on-hot)">--accent-hot</div><div class="sg-meta"><b>Hot</b><span>#ff3b00 · both</span><br />Fill under ink 5.29:1</div></div>
-          <div class="sg-swatch"><div class="sg-chip" style="background: var(--accent); color: var(--on-accent)">--accent</div><div class="sg-meta"><b>Rust / Hot light</b><span>#b52900 · dark #ff5722</span><br />Text 5.62:1 · dark 5.97:1</div></div>
-          <div class="sg-swatch"><div class="sg-chip" style="background: var(--selection); color: var(--text)">--selection</div><div class="sg-meta"><b>Blush / Ember</b><span>#f5e0d6 · dark #4a2418</span><br />Selection, row hover</div></div>
-          <div class="sg-swatch"><div class="sg-chip" style="background: var(--code-bg); color: var(--code-fg)">--code-bg</div><div class="sg-meta"><b>Code well</b><span>#111111 · dark #000000</span><br />Always black</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--bg); color: var(--text)">--bg</div><div class="sg-meta"><b>Paper / Ink</b><span data-hex="--bg"></span><br />Ground</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--text); color: var(--bg)">--text</div><div class="sg-meta"><b>Ink / Paper</b><span data-hex="--text"></span><br />Body text</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--text-muted); color: var(--bg)">--text-muted</div><div class="sg-meta"><b>Stone / Stone light</b><span data-hex="--text-muted"></span><br />Secondary text</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--border); color: var(--bg)">--border</div><div class="sg-meta"><b>Rule / Band</b><span data-hex="--border"></span><br />Rules and inverted bands</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--accent-hot); color: var(--on-hot)">--accent-hot</div><div class="sg-meta"><b>Hot</b><span data-hex="--accent-hot"></span><br />Fill under ink; text on the code well</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--accent); color: var(--on-accent)">--accent</div><div class="sg-meta"><b>Rust / Hot light</b><span data-hex="--accent"></span><br />Orange readable as text on the ground</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--selection); color: var(--text)">--selection</div><div class="sg-meta"><b>Blush / Ember</b><span data-hex="--selection"></span><br />Selection, row hover</div></div>
+          <div class="sg-swatch"><div class="sg-chip" style="background: var(--code-bg); color: var(--code-fg)">--code-bg</div><div class="sg-meta"><b>Code well</b><span data-hex="--code-bg"></span><br />Ink in light, black in dark</div></div>
         </div>
 
         <div class="sg-pair" style="margin-top: 2rem">
@@ -98,18 +170,32 @@
             </div>
           </div>
           <div class="sg-demo sg-dont">
-            <div class="sg-demo-label">Don't · hot orange as text on paper (3.14:1)</div>
+            <div class="sg-demo-label">Don't · hot orange as text on paper</div>
             <div class="sg-demo-body">
-              <span style="color: #ff3b00; font-family: var(--font-mono); font-size: var(--size-row)">showcase.md · unsaved</span>
+              <span style="color: var(--accent-hot); font-family: var(--font-mono); font-size: var(--size-row)">showcase.md · unsaved</span>
               <span style="color: var(--accent); font-family: var(--font-mono); font-size: var(--size-row)">← use --accent instead</span>
             </div>
           </div>
         </div>
+
+        <h3 class="sg-h3" id="contrast">Contrast</h3>
+        <p class="sg-lede">
+          Web Content Accessibility Guidelines (WCAG) 2 ratios, computed here in the browser from
+          the values in <code style="font-family: var(--font-mono)">alethia.css</code>, for both
+          themes. Text needs 4.5:1 (AA) or 7:1 (AAA). Anything under 4.5 is marked as a fail:
+          all chrome type is small, so the 3:1 allowance for large text never applies here. The
+          last two rows fail on purpose: they are the pairs the token split exists to prevent.
+        </p>
+        <div class="al-prose sg-contrast">
+          <table id="contrast-table">
+            <thead><tr><th>Pair</th><th>Where</th><th>Light</th><th>Dark</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </section>
 
-      <!-- 02 TYPE -->
-      <section class="sg-section" id="type">
-        <header><span class="sg-num">02</span><h2 class="sg-h">Type</h2></header>
+      <section class="sg-section" id="type" aria-labelledby="type-h">
+        <h2 class="sg-h" id="type-h">Type</h2>
         <p class="sg-lede">
           Three voices, never mixed within a role. Archivo carries reading. Archivo Black shouts,
           always in capitals. DM Mono labels everything that is not content.
@@ -129,6 +215,7 @@
         </div>
 
         <div style="margin-top: 2rem">
+          <div class="sg-row"><span>Micro · 0.62rem +0.1em</span><span class="al-list-heading" style="margin: 0">Recent</span></div>
           <div class="sg-row"><span>Label · 0.66rem +0.1em</span><span class="al-label">95 words · 667 characters</span></div>
           <div class="sg-row"><span>UI · 0.7rem +0.08em</span><span style="font-family: var(--font-mono); font-size: var(--size-ui); letter-spacing: 0.08em; text-transform: uppercase">Open folder…</span></div>
           <div class="sg-row"><span>Note · 0.72rem +0.02em</span><span style="font-family: var(--font-mono); font-size: var(--size-note); letter-spacing: 0.02em">No earlier versions yet. One is kept each time a save replaces this file.</span></div>
@@ -136,51 +223,50 @@
         </div>
       </section>
 
-      <!-- 03 RULES -->
-      <section class="sg-section" id="rules">
-        <header><span class="sg-num">03</span><h2 class="sg-h">Rules &amp; shape</h2></header>
+      <section class="sg-section" id="rules" aria-labelledby="rules-h">
+        <h2 class="sg-h" id="rules-h">Rules &amp; shape</h2>
         <p class="sg-lede">
           Structure is drawn, not shaded. Four line weights, square corners everywhere, no
           shadows. Depth comes from inversion: a band of ink on paper, or paper on ink.
         </p>
-        <div class="sg-row"><span>2px · thin</span><div class="sg-rule" style="border-top-width: 2px"></div></div>
-        <div class="sg-row"><span>3px · structural</span><div class="sg-rule" style="border-top-width: 3px"></div></div>
-        <div class="sg-row"><span>6px · heavy (hr)</span><div class="sg-rule" style="border-top-width: 6px"></div></div>
-        <div class="sg-row"><span>8px · slab (quote)</span><div style="height: 2.2rem; border-left: 8px solid var(--border)"></div></div>
+        <div class="sg-row"><span>2px · thin</span><div class="sg-rule" style="border-top-width: var(--rule-thin)"></div></div>
+        <div class="sg-row"><span>3px · structural</span><div class="sg-rule" style="border-top-width: var(--rule)"></div></div>
+        <div class="sg-row"><span>6px · heavy (hr)</span><div class="sg-rule" style="border-top-width: var(--rule-heavy)"></div></div>
+        <div class="sg-row"><span>8px · slab (quote)</span><div style="height: 2.2rem; border-left: var(--rule-slab) solid var(--border)"></div></div>
         <div class="sg-row"><span>Radius</span><span style="font-family: var(--font-mono); font-size: var(--size-row)">0. The app-icon mask is the only curve in the system.</span></div>
       </section>
 
-      <!-- 04 COMPONENTS -->
-      <section class="sg-section" id="components">
-        <header><span class="sg-num">04</span><h2 class="sg-h">Chrome</h2></header>
+      <section class="sg-section" id="chrome" aria-labelledby="chrome-h">
+        <h2 class="sg-h" id="chrome-h">Chrome</h2>
         <p class="sg-lede">
           The editor window, rebuilt from the .al-* classes. Hover the rows, tabs and toolbar to
           see the two interaction colours: hot fill for "pointing at", inversion for "pressed" or
-          "selected".
+          "selected". Tab through it to see the focus outline the guide adds.
         </p>
 
         <div class="sg-window">
           <div class="al-titlebar">
             <span class="sg-lights" aria-hidden="true"><i></i><i></i><i></i></span>
             <button type="button" class="al-icon-button" aria-label="Toggle sidebar">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="9" y1="4" x2="9" y2="20" /></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="9" y1="4" x2="9" y2="20" /></svg>
             </button>
-            <span class="al-titlebar-name">showcase.md <span class="al-dirty" aria-label="Unsaved changes"></span></span>
+            <span class="al-titlebar-name">showcase.md <span class="al-dirty" role="img" aria-label="Unsaved changes"></span></span>
           </div>
           <div class="al-shell">
-            <aside class="al-sidebar">
+            <aside class="al-sidebar" aria-label="Sidebar">
+              <button type="button" class="al-workspace"><span class="al-row-label">notes</span><span class="al-workspace-caret" aria-hidden="true">▾</span></button>
               <div class="al-tabs" role="tablist">
                 <button type="button" role="tab" aria-selected="true">Files</button>
                 <button type="button" role="tab" aria-selected="false">Outline</button>
                 <button type="button" role="tab" aria-selected="false">History</button>
               </div>
               <div class="al-sidebar-body">
-                <button type="button" class="al-row" style="padding-left: 8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(90deg)"><polyline points="9 6 15 12 9 18" /></svg><span class="al-row-label al-row-dir">notes</span></button>
-                <button type="button" class="al-row" style="padding-left: 20px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18" /></svg><span class="al-row-label al-row-dir">nested</span></button>
-                <button type="button" class="al-row" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">alpha.md</span></button>
-                <button type="button" class="al-row" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">beta.md</span></button>
-                <button type="button" class="al-row is-current" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">showcase.md</span></button>
-                <button type="button" class="al-row" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">vtest.md</span></button>
+                <button type="button" class="al-row" style="padding-left: 8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(90deg)" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg><span class="al-row-label al-row-dir">notes</span></button>
+                <button type="button" class="al-row" style="padding-left: 20px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg><span class="al-row-label al-row-dir">nested</span></button>
+                <button type="button" class="al-row" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">alpha.md</span></button>
+                <button type="button" class="al-row" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">beta.md</span></button>
+                <button type="button" class="al-row is-current" aria-current="true" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">showcase.md</span></button>
+                <button type="button" class="al-row" style="padding-left: 20px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><polyline points="14 3 14 8 19 8" /></svg><span class="al-row-label">vtest.md</span></button>
               </div>
             </aside>
             <div class="al-main">
@@ -233,7 +319,7 @@
           <div class="sg-demo">
             <div class="sg-demo-label">State marks</div>
             <div class="sg-demo-body">
-              <span class="al-dirty" aria-label="Unsaved"></span>
+              <span class="al-dirty" role="img" aria-label="Unsaved"></span>
               <span class="al-badge">Focus</span>
               <span class="al-badge">Typewriter</span>
             </div>
@@ -248,15 +334,20 @@
             </div>
           </div>
           <div class="sg-demo">
-            <div class="sg-demo-label">Empty state</div>
-            <div class="al-empty">No folder open.<br /><br /><button type="button" class="al-button">Open folder…</button></div>
+            <div class="sg-demo-label">Empty state · with recent folders</div>
+            <div class="al-empty">
+              <p style="margin: 0 0 0.75rem">No folder open.</p>
+              <button type="button" class="al-button">Open folder…</button>
+              <p class="al-list-heading">Recent</p>
+              <button type="button" class="al-row" style="padding-left: 0"><span class="al-row-label">~/Documents/notes</span></button>
+              <button type="button" class="al-row" style="padding-left: 0"><span class="al-row-label">~/dev/alethia/docs</span></button>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- 05 PROSE -->
-      <section class="sg-section" id="prose">
-        <header><span class="sg-num">05</span><h2 class="sg-h">Prose</h2></header>
+      <section class="sg-section" id="prose" aria-labelledby="prose-h">
+        <h2 class="sg-h" id="prose-h">Prose</h2>
         <p class="sg-lede">
           Plain semantic HTML inside <code style="font-family: var(--font-mono)">.al-prose</code>,
           set the way the editor renders markdown.
@@ -297,13 +388,34 @@ tags: [intake, ops]</div>
         </article>
       </section>
 
-      <!-- 06 MARK -->
-      <section class="sg-section" id="mark">
-        <header><span class="sg-num">06</span><h2 class="sg-h">Mark</h2></header>
+      <section class="sg-section" id="screens" aria-labelledby="screens-h">
+        <h2 class="sg-h" id="screens-h">Screens</h2>
+        <p class="sg-lede">
+          The app itself, for comparison with the rebuilt chrome above. Screenshots live in
+          <code style="font-family: var(--font-mono)">docs/screenshots/</code>.
+        </p>
+        <div class="sg-shots">
+          <figure>
+            <img src="../screenshots/editor-light.png" alt="Alethia in light mode: file tree on the left, format bar, and a rendered document with a quote, tasks, a table and a code slab" />
+            <figcaption>Light. File tree, format bar, rendered document.</figcaption>
+          </figure>
+          <figure>
+            <img src="../screenshots/editor-dark.png" alt="Alethia in dark mode: the same window with paper text and rules on an ink ground" />
+            <figcaption>Dark. The paper inverts; the orange fills stay.</figcaption>
+          </figure>
+          <figure>
+            <img src="../screenshots/history.png" alt="Alethia's history panel listing earlier versions of a file by relative time and size" />
+            <figcaption>History. Every save keeps the version it replaced.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="sg-section" id="mark" aria-labelledby="mark-h">
+        <h2 class="sg-h" id="mark-h">Mark</h2>
         <div class="sg-pair">
           <div class="sg-demo">
-            <div class="sg-demo-label">App icon</div>
-            <div class="sg-demo-body"><img src="assets/alethia-icon.svg" alt="" width="128" height="128" /><img src="assets/alethia-icon.svg" alt="" width="64" height="64" /><img src="assets/alethia-icon.svg" alt="" width="32" height="32" /></div>
+            <div class="sg-demo-label">App icon · build/icon.svg</div>
+            <div class="sg-demo-body"><img src="../../build/icon.svg" alt="" width="128" height="128" /><img src="../../build/icon.svg" alt="" width="64" height="64" /><img src="../../build/icon.svg" alt="" width="32" height="32" /></div>
           </div>
           <div class="sg-demo">
             <div class="sg-demo-label">Wordmark</div>
@@ -314,7 +426,24 @@ tags: [intake, ops]</div>
           </div>
         </div>
       </section>
+
+      <section class="sg-section" id="print" aria-labelledby="print-h">
+        <h2 class="sg-h" id="print-h">Print</h2>
+        <p class="sg-lede">
+          On paper the ground is white, every orange goes black, the slabs stay solid and inline
+          fills become rules. Print this page to see the whole specimen that way; the rules are in
+          the README under Print.
+        </p>
+        <button type="button" class="al-button sg-print-action" onclick="window.print()">Print this page…</button>
+      </section>
+
+      <footer class="sg-foot">
+        Alethia style guide · values from the app's stylesheets · fonts under the SIL Open Font License (OFL)
+      </footer>
     </main>
+
+    <!-- Hidden probes: one forced to each theme, so the hex labels and the contrast table can be read from alethia.css rather than typed here. -->
+    <div class="sg-probe" aria-hidden="true"><span id="probe-light" data-al-theme="light"></span><span id="probe-dark" data-al-theme="dark"></span></div>
 
     <script>
       // Theme switch for the specimen only: alethia.css reads data-al-theme.
@@ -331,6 +460,74 @@ tags: [intake, ops]</div>
       document.querySelectorAll('.al-tabs [role="tab"]').forEach((tab, _i, all) => {
         tab.addEventListener('click', () => all.forEach((t) => t.setAttribute('aria-selected', String(t === tab))))
       })
+
+      // Read the tokens from alethia.css, once per theme.
+      const probes = {
+        light: getComputedStyle(document.getElementById('probe-light')),
+        dark: getComputedStyle(document.getElementById('probe-dark')),
+      }
+      const token = (theme, name) => probes[theme].getPropertyValue(name).trim()
+
+      for (const label of document.querySelectorAll('[data-hex]')) {
+        const name = label.dataset.hex
+        const light = token('light', name)
+        const dark = token('dark', name)
+        label.textContent = light === dark ? `${light} · both` : `${light} · dark ${dark}`
+      }
+
+      // WCAG 2 contrast: relative luminance of sRGB, (L1 + 0.05) / (L2 + 0.05).
+      const luminance = (hex) => {
+        const channel = (i) => {
+          const c = parseInt(hex.slice(i, i + 2), 16) / 255
+          return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+        }
+        return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
+      }
+      const ratio = (fg, bg) => {
+        const a = luminance(fg)
+        const b = luminance(bg)
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+      }
+      const grade = (r) => (r >= 7 ? 'AAA' : r >= 4.5 ? 'AA' : 'Fail')
+
+      // [text token, ground token, where it is used]. Fails are intentional: they are the
+      // pairs the two-orange split exists to prevent.
+      const pairs = [
+        ['--text', '--bg', 'Body text'],
+        ['--text-muted', '--bg', 'Muted text, folders, h6'],
+        ['--accent', '--bg', 'Accent text: bullets, numbers, status identity, caret'],
+        ['--bg', '--border', 'Text on a band: titlebar, active tab, table head, badge'],
+        ['--on-hot', '--accent-hot', 'Text on a hot fill: current row, banner, link, bold cell'],
+        ['--accent-hot', '--code-bg', 'Fence label and code keywords on the well'],
+        ['--on-accent', '--accent', 'Inline code'],
+        ['--text', '--selection', 'Selected text, hovered row'],
+        ['--text-muted', '--selection', 'Hovered folder row'],
+        ['--code-string', '--code-bg', 'Code strings'],
+        ['--code-type', '--code-bg', 'Code types'],
+        ['--code-comment', '--code-bg', 'Code comments and operators'],
+        ['--accent-hot', '--bg', 'Hot orange as text on the ground: fails on paper, which is why --accent exists'],
+        ['--text', '--accent-hot', 'Text on a hot fill if it were --text: fails in dark, which is why --on-hot exists'],
+      ]
+      const body = document.querySelector('#contrast-table tbody')
+      for (const [fg, bg, where] of pairs) {
+        const row = document.createElement('tr')
+        const cell = (text, fail) => {
+          const td = document.createElement('td')
+          if (fail) {
+            const strong = document.createElement('strong')
+            strong.textContent = text
+            td.append(strong)
+          } else td.textContent = text
+          return td
+        }
+        const measure = (theme) => {
+          const r = ratio(token(theme, fg), token(theme, bg))
+          const g = grade(r)
+          return cell(`${r.toFixed(2)} ${g}`, g === 'Fail')
+        }
+        row.append(cell(`${fg} on ${bg}`), cell(where), measure('light'), measure('dark'))
+        body.append(row)
+      }
     </script>
   </body>
 </html>
