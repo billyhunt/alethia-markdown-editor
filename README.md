@@ -58,7 +58,7 @@ away to see it rendered again. The example files are bundled with packaged build
 
 Alethia's visual language is documented as a live specimen, a rulebook, a drop-in
 stylesheet and a design-token file. Read it on the
-[published site](https://billyhunt.github.io/alethia-markdown-editor/docs/style-guide/),
+[published site](https://www.billyhunt.com/alethia-markdown-editor/docs/style-guide/),
 or browse [`docs/style-guide/`](docs/style-guide/) in the repository.
 
 ## Building
