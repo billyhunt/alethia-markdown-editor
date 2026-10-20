@@ -257,6 +257,37 @@
   color: var(--on-hot);
 }
 
+/* Workspace switcher: the open folder's name above the tabs. It behaves like
+   a row, so it hovers like one. */
+.al-workspace {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-bottom: var(--rule) solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--size-ui);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.al-workspace:hover {
+  background: var(--selection);
+}
+
+.al-workspace-caret {
+  flex: none;
+  color: var(--text-muted);
+}
+
 /* Tabs: equal cells under a structural rule; the active one inverts. */
 .al-tabs {
   display: flex;
@@ -345,6 +376,16 @@
   font-family: var(--font-mono);
   font-size: var(--size-note);
   letter-spacing: 0.02em;
+}
+
+/* A muted micro-caps label above a short list inside an empty state. */
+.al-list-heading {
+  margin: 1rem 0 0.25rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 /* Button: an outlined slab that inverts on hover. */
@@ -473,6 +514,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  margin-bottom: 0.25rem;
   padding: 0.35rem 0.6rem;
   background: var(--accent-hot);
   color: var(--on-hot);
@@ -569,6 +611,12 @@
   transition: opacity 0.2s ease;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .al-dim {
+    transition: none;
+  }
+}
+
 /* 5. Prose ---------------------------------------------------------------- */
 
 .al-prose {
@@ -613,7 +661,7 @@
   font-weight: 500;
   letter-spacing: 0.12em;
   line-height: 1.5;
-  text-transform: none;
+  text-transform: uppercase;
 }
 
 .al-prose h6 {
@@ -812,7 +860,7 @@
 }
 
 /* Images sit inline with the text, capped so one photo is not the whole
-   screen, and ruled like everything else. As in the editor (PR #42). */
+   screen, and ruled like everything else, as in the editor. */
 .al-prose img {
   display: inline-block;
   max-width: 100%;
