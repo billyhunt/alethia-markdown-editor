@@ -54,11 +54,16 @@ export const editorTheme = EditorView.theme({
     fontSize: '0.78rem',
     borderRadius: '0',
   },
-  '.cm-panel input': {
+  '.cm-panel .cm-textfield': {
     border: '2px solid var(--border)',
     background: 'var(--bg)',
     color: 'var(--text)',
     padding: '2px 6px',
+  },
+  // Editing turns the rule accent, as in the file tree's rename field.
+  '.cm-panel .cm-textfield:focus': {
+    outline: 'none',
+    borderColor: 'var(--accent)',
   },
 })
 

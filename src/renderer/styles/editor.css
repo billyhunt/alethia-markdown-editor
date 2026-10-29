@@ -149,7 +149,6 @@
 .cm-md-checkbox {
   margin: 0 0.4em 0 0;
   vertical-align: baseline;
-  accent-color: var(--accent);
 }
 
 .cm-line.cm-md-task-done {
