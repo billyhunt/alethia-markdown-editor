@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
   recentsAdd: vi.fn(),
   documentWatch: vi.fn(),
   folderList: vi.fn(),
+  folderListImplicit: vi.fn(),
+  folderWatch: vi.fn(),
+  recentsAddFolder: vi.fn(),
   setDocument: vi.fn(),
   setFilePath: vi.fn(),
   revealDocument: vi.fn(),
@@ -28,9 +31,9 @@ vi.mock('../../src/renderer/api.ts', () => ({
       saveAs: vi.fn(),
     },
     fs: { readFile: mocks.readFile, writeFile: vi.fn() },
-    recents: { add: mocks.recentsAdd, addFolder: vi.fn(), listFolders: vi.fn(async () => []) },
+    recents: { add: mocks.recentsAdd, addFolder: mocks.recentsAddFolder, listFolders: vi.fn(async () => []) },
     document: { watch: mocks.documentWatch, unwatch: vi.fn() },
-    folder: { list: mocks.folderList, watch: vi.fn() },
+    folder: { list: mocks.folderList, listImplicit: mocks.folderListImplicit, watch: mocks.folderWatch },
     window: {
       revealDocument: mocks.revealDocument,
       releaseDocument: mocks.releaseDocument,
@@ -71,23 +74,78 @@ beforeEach(() => {
 })
 
 describe('document-first openPath', () => {
-  it('opens a direct file without adopting its parent folder and clears only the transient sidebar', async () => {
+  it('opens a direct file and shows its containing folder in the sidebar', async () => {
+    mocks.folderListImplicit.mockResolvedValue({ root: '/notes', tree: [], truncated: false })
+
     await openPath(PATH, { preferDocument: true })
 
     expect(mocks.readFile).toHaveBeenCalledWith(PATH)
-    expect(mocks.folderList).not.toHaveBeenCalled()
     expect(mocks.setDocument).toHaveBeenCalledWith('# Today')
     expect(mocks.setFilePath).toHaveBeenCalledWith(PATH)
     expect(mocks.documentWatch).toHaveBeenCalledWith(PATH)
     expect(useDocumentStore.getState().filePath).toBe(PATH)
-    expect(useWorkspaceStore.getState().folderRoot).toBeNull()
-    expect(useWorkspaceStore.getState().sidebarVisible).toBe(false)
+    // Asked for as an implicit adoption, which main may decline.
+    expect(mocks.folderListImplicit).toHaveBeenCalledWith('/notes')
+    expect(mocks.folderList).not.toHaveBeenCalled()
+    expect(useWorkspaceStore.getState().folderRoot).toBe('/notes')
+    // The user's own sidebar preference is left alone.
+    expect(useWorkspaceStore.getState().sidebarVisible).toBe(true)
   })
 
-  it('keeps the sidebar state when opening from an existing UI context', async () => {
+  it('skips the folder quietly when main declines it, and the document stays open', async () => {
+    mocks.folderListImplicit.mockResolvedValue(null)
+
+    await openPath(PATH, { preferDocument: true })
+
+    expect(useDocumentStore.getState().filePath).toBe(PATH)
+    expect(useWorkspaceStore.getState().folderRoot).toBeNull()
+    expect(mocks.showError).not.toHaveBeenCalled()
+    expect(mocks.folderWatch).not.toHaveBeenCalled()
+    expect(mocks.recentsAddFolder).not.toHaveBeenCalled()
+  })
+
+  it('still reports a real failure listing the folder, with the document open', async () => {
+    mocks.folderListImplicit.mockRejectedValue(new Error('EIO: i/o error'))
+
+    await openPath(PATH, { preferDocument: true })
+
+    expect(useDocumentStore.getState().filePath).toBe(PATH)
+    expect(mocks.showError).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Could not open folder' }),
+    )
+    expect(useWorkspaceStore.getState().folderRoot).toBeNull()
+  })
+
+  it('reports a watch failure the way an explicit folder open does, tree already shown', async () => {
+    mocks.folderListImplicit.mockResolvedValue({ root: '/notes', tree: [], truncated: false })
+    mocks.folderWatch.mockRejectedValue(new Error('EMFILE: too many open files'))
+
+    await openPath(PATH, { preferDocument: true })
+
+    expect(useDocumentStore.getState().filePath).toBe(PATH)
+    expect(mocks.showError).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Could not open folder' }),
+    )
+    expect(mocks.recentsAddFolder).not.toHaveBeenCalled()
+    expect(useWorkspaceStore.getState().folderRoot).toBe('/notes')
+  })
+
+  it('keeps an open workspace when a direct file is opened beside it', async () => {
+    useWorkspaceStore.setState({ folderRoot: '/vault' })
+
+    await openPath(PATH, { preferDocument: true })
+
+    expect(mocks.folderListImplicit).not.toHaveBeenCalled()
+    expect(mocks.folderList).not.toHaveBeenCalled()
+    expect(useWorkspaceStore.getState().folderRoot).toBe('/vault')
+  })
+
+  it('does not change the folder for an open from inside the UI', async () => {
     await openPath(PATH)
 
+    expect(mocks.folderListImplicit).not.toHaveBeenCalled()
     expect(mocks.folderList).not.toHaveBeenCalled()
+    expect(useWorkspaceStore.getState().folderRoot).toBeNull()
     expect(useWorkspaceStore.getState().sidebarVisible).toBe(true)
   })
 

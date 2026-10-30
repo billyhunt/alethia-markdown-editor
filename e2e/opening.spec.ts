@@ -92,6 +92,16 @@ test.describe('opening from the command line', () => {
     await quit(app)
   })
 
+  test('a file named on launch shows its containing folder in the sidebar', async () => {
+    const note = box.file('note.md')
+    box.file('sibling.md')
+    const app = await launch(box, [note])
+    const page = await app.firstWindow()
+    await expect(page.locator('.tree-file', { hasText: 'sibling.md' })).toBeVisible()
+    await expect(page.locator('.tree-file', { hasText: 'note.md' })).toBeVisible()
+    await quit(app)
+  })
+
   test('a non-markdown file is ignored rather than opened', async () => {
     const binary = path.join(box.docs, 'image.png')
     fs.writeFileSync(binary, Buffer.from([0x89, 0x50, 0x4e, 0x47]))
@@ -109,6 +119,49 @@ test.describe('opening from Finder while running', () => {
     await openFromFinder(app, note)
     await expectDocuments(app, [note])
     expect(await focusedFile(app)).toBe(note)
+    await quit(app)
+  })
+
+  test('a file opened from Finder shows its containing folder in the sidebar', async () => {
+    const note = box.file('note.md')
+    box.file('sibling.md')
+    const app = await launch(box)
+    await app.firstWindow()
+    await openFromFinder(app, note)
+    const page = await pageFor(app, note)
+    await expect(page.locator('.tree-file', { hasText: 'sibling.md' })).toBeVisible()
+    await quit(app)
+  })
+
+  test('a file reached through a symlink to another folder opens without an error dialog', async () => {
+    // Main grants the folder the user selected from; the app is handed the
+    // file's real path, whose folder was never granted, so it is skipped.
+    const target = box.file('real/real.md')
+    const selected = path.join(box.root, 'selected')
+    fs.mkdirSync(selected)
+    const link = path.join(selected, 'link.md')
+    fs.symlinkSync(target, link)
+    const app = await launch(box)
+    await app.firstWindow()
+    await app.evaluate(({ dialog }) => {
+      const scope = globalThis as unknown as { __errors: string[] }
+      scope.__errors = []
+      dialog.showMessageBox = (async (...args: unknown[]) => {
+        const options = args.find((arg) => typeof arg === 'object' && arg && 'message' in arg) as {
+          message: string
+        }
+        scope.__errors.push(options.message)
+        return { response: 0, checkboxChecked: false }
+      }) as typeof dialog.showMessageBox
+    })
+    await openFromFinder(app, link)
+    await expectDocuments(app, [target])
+    // Give a wrong error dialog time to appear before counting.
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    const errors = await app.evaluate(
+      () => (globalThis as unknown as { __errors: string[] }).__errors,
+    )
+    expect(errors).toEqual([])
     await quit(app)
   })
 
