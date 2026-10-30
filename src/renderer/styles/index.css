@@ -98,3 +98,31 @@ body {
 ::selection {
   background: var(--selection);
 }
+
+/* Keyboard focus: a hard 2px accent outline. Left to Chromium, macOS draws
+   its rounded ring around square controls. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Checkboxes are drawn, because the native one is rounded. Empty, a 2px
+   square rule in the text colour; checked, a solid accent square. :where()
+   keeps this at zero specificity, so each checkbox's own spacing wins. */
+:where(input[type='checkbox']) {
+  appearance: none;
+  width: 0.85em;
+  height: 0.85em;
+  margin: 0;
+  /* A form control's currentColor is the browser's, not the text's. */
+  color: inherit;
+  border: 2px solid currentColor;
+  border-radius: 0;
+  background: transparent;
+  vertical-align: -0.1em;
+}
+
+:where(input[type='checkbox']:checked) {
+  background: var(--accent);
+  border-color: var(--accent);
+}

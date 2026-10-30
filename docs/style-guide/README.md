@@ -318,6 +318,24 @@ because a heavier one would overwhelm body-size text.
 `border-radius: 0` everywhere: buttons, inputs, code wells, table cells,
 inline code, badges.
 
+That includes the corners you don't draw yourself, which is where curves get
+back in:
+
+- **Third-party components.** Libraries round their own chrome, often with
+  fixed values their radius variables don't reach. Square everything under
+  the component's root, not just the variables (§14).
+- **Focus rings.** Left to the browser, macOS draws a rounded ring around a
+  square control. Set your own: a 2px `--accent` outline, offset 2px, on
+  `:focus-visible`. On a band the accent is too faint, so a band's controls
+  take the band's text colour (paper on the ink titlebar, ink on hot). In the
+  sidebar the outline is drawn inside, because the list clips anything
+  outside its rows.
+- **Checkboxes.** The native box is rounded. Draw it: a 2px square rule in
+  the text colour, filled solid `--accent` when checked.
+
+A rounded box holding square buttons (or the reverse) is the surest sign one
+of these slipped through.
+
 There are two places with curves, and neither one is ours. The macOS app-icon
 mask (the icon tile is `rx=224` on 1024) belongs to the OS. The 24px stroke
 icons have `rx=2` and round caps, inherited from a standard line-icon set; see
@@ -494,7 +512,7 @@ is the only heading the chrome has; it labels, it does not shout.
 | Current / the one that matters | Hot fill + ink, weight 500 |
 | Needs a decision | Hot band (banner) |
 | Unsaved / pending | 7px hot square |
-| Keyboard focus | 2px `--accent` outline, offset 2px *(export addition, see §12)* |
+| Keyboard focus | 2px `--accent` outline, offset 2px; on a band, the band's text colour; inside the sidebar, inset |
 
 ---
 
@@ -515,7 +533,7 @@ layer.
 | **Blockquote** | An 8px slab on the left, 1em gap, Archivo Black caps at 1.05em, leading 1.35. Never a `>`. Never italic. |
 | **Bullets** | Square glyphs in `--accent` at 0.8em, hung in a 1.6em gutter: `▪` at even depths, `▫` at odd. |
 | **Ordered lists** | Mono 500 numbers in `--accent` at 0.85em, hung in the same gutter. The hang is capped at the gutter, so `10.` pushes its text along rather than crossing a quote's slab or the page edge. |
-| **Tasks** | Bullet, then a native checkbox with `accent-color: var(--accent)`. Done items go muted and are struck through. |
+| **Tasks** | Bullet, then the drawn square checkbox (§4.2): a 2px rule in the text colour, a solid `--accent` square when checked. Done items go muted and are struck through. |
 | **Code block** | A solid black slab, square, full measure, mono 0.85em, padding 0.5em 1em. The language is set top right in hot mono caps, 0.7rem, +0.16em. |
 | **Table** | Mono 0.85em, 2px ink cell borders, head row inverted in caps (+0.12em, 500). A cell containing **bold** fills entirely with hot, because a chip floating inside a cell reads as a mistake. |
 | **Image** | Inline with the text (`inline-block`, middle-aligned), at most the measure wide and `60vh` tall, with a 3px `--border` rule around it. |
@@ -624,7 +642,6 @@ the app catches up, delete the row.
 
 | Topic | App today | This guide |
 |---|---|---|
-| Keyboard focus | No focus style of its own: chrome buttons get Chromium's default ring, the rename input and the editor set `outline: none` | 2px `--accent` outline, offset 2px, on `:focus-visible` |
 | Link hover | None (links open with ⌘-click) | Inverts to an ink band |
 | Disabled button | Not used | Dashed 2px rule, muted text, no hover |
 | Text-on-fill colour | `#111111` hard-coded per rule | `--on-hot` token |
@@ -732,6 +749,31 @@ Use the editor's own theme from `src/renderer/editor/theme.ts`
 Or use `alethia.css` with `classHighlighter` from `@lezer/highlight`, which
 emits the `tok-*` classes styled here.
 
+### Third-party components
+Set the component's radius variables to 0, then square every element under
+its root anyway: libraries also hard-code radii, at whatever specificity they
+like, and mount tooltips and drag ghosts on `<body>`. Radius is the one
+property worth `!important` here:
+
+```css
+.vendor-root,
+.vendor-root *,
+.vendor-root *::before,
+.vendor-root *::after,
+.vendor-tooltip,
+.vendor-drag-ghost {
+  border-radius: 0 !important;
+}
+```
+
+Keep the variables at 0 as well, because a library's own `!important` rules
+can read them and outrank yours. Swap in the library's own portal classes for
+the tooltip and drag ghost. `*` does not reach slider and scrollbar thumbs, so
+list them in a rule of their own: a pseudo-element an engine doesn't know
+voids every selector in its rule.
+[Tabula](https://github.com/billyhunt/tabula) does all of this for Excalidraw
+in `src/renderer/styles/excalidraw.css`.
+
 ### Design tools
 Import `tokens.json` (DTCG Format Module 2025.10). Colours are `srgb`
 objects with a `hex` fallback; sizes are `{ value, unit }` in `px` or `rem`.
@@ -750,7 +792,9 @@ it needs less on it instead.
 
 ## 15. Don'ts
 
-- Don't round a corner, add a shadow, blur, or gradient.
+- Don't round a corner, add a shadow, blur, or gradient. That counts for the
+  corners you didn't draw: a library's chrome, the browser's focus ring, a
+  native checkbox.
 - Don't put hot orange text on paper. Don't put white or paper text on the
   hot orange.
 - Don't add a second hue, a "success green" or an "error red". A problem gets
