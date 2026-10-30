@@ -11,10 +11,9 @@ working at. Agents do not run it locally:
   push to `main` (not for a branch without a pull request): push to a branch
   with an open pull request and read its result there.
 - Run one end-to-end test locally only to debug a failure CI cannot explain,
-  with `npm run build && npx playwright test -g "<name>"`, never the whole
-  suite.
+  with `npm run test:e2e -- -g "<name>"`, never the whole suite.
 - No throwaway scripts or probes that open Electron windows on screen. Use
   `show: false` or offscreen windows.
-- Every local suite run first waits for the desktop-test lock
-  (`e2e/desktopLock.mjs`: port 47390 on 127.0.0.1, shared with Tabula), so two
-  never run at once.
+- `npm run test:e2e` takes the desktop-test lock (`e2e/desktopLock.mjs`: port
+  47390 on 127.0.0.1, shared with Tabula) before it builds, so two runs never
+  overlap, not even their builds.
