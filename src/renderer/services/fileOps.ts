@@ -64,7 +64,9 @@ interface OpenPathOptions {
   /**
    * A file chosen directly (Finder, Open...) shows its containing folder in the
    * sidebar, unless a workspace is already open: that one stays, because the
-   * folder is the user's context and a document is not owned by it.
+   * folder is the user's context and a document is not owned by it. Main may
+   * decline the folder (never granted, or too broad: home, a filesystem root,
+   * a volume's top level); then the sidebar is left as it was.
    */
   preferDocument?: boolean
   /**
@@ -93,7 +95,7 @@ export async function openPath(
     try {
       await adoptFile(filePath)
       if (preferDocument && !useWorkspaceStore.getState().folderRoot) {
-        await adoptFolder(filePath.slice(0, filePath.lastIndexOf('/')) || '/')
+        await adoptFolder(filePath.slice(0, filePath.lastIndexOf('/')) || '/', { implicit: true })
       }
     } catch (error) {
       await api.dialog.showError({ title: 'Could not open file', message: unwrapIpcError(error) })
@@ -138,9 +140,16 @@ export async function openFolderDialog(): Promise<void> {
   if (chosen) await adoptFolder(chosen)
 }
 
-export async function adoptFolder(root: string): Promise<void> {
+/**
+ * `implicit` is for a folder shown because a file was opened from it, not
+ * because the user asked for that folder. Main may decline it (never granted,
+ * or too broad to show unasked), and a declined folder is skipped quietly.
+ * Real failures still reach the user, as they do for an explicit open.
+ */
+export async function adoptFolder(root: string, { implicit = false } = {}): Promise<void> {
   try {
-    const folder = await api.folder.list(root)
+    const folder = implicit ? await api.folder.listImplicit(root) : await api.folder.list(root)
+    if (!folder) return
     useWorkspaceStore.getState().setFolder(folder)
     await api.folder.watch(root)
     // Every folder opened becomes somewhere to switch back to.

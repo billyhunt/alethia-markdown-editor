@@ -30,10 +30,11 @@ async function classify(target: string): Promise<OpenPathEvent | null> {
     if (stats.isDirectory()) return { path: grantRoot(target), kind: 'dir' }
     if (!isReadablePath(target)) return null
 
-    // A direct file grants its containing folder. The renderer then shows that
-    // folder in the sidebar (see openPath's preferDocument), so the root must
-    // be granted here, with the same capability boundary as an explicitly
-    // opened folder; it also lets relative images resolve.
+    // A direct file grants its containing folder. The renderer may then show
+    // that folder in the sidebar (see openPath's preferDocument; main can
+    // decline it, see listImplicitFolder), so the root is granted here with
+    // the same capability boundary as an explicitly opened folder; it also
+    // lets relative images resolve.
     grantRoot(path.dirname(target))
     grantFile(target)
     // Windows are matched on the real path, so a file reached through a

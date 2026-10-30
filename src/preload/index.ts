@@ -40,6 +40,7 @@ const api: MarkdownApi = {
   },
   folder: {
     list: (root) => ipcRenderer.invoke(IPC.folderList, root),
+    listImplicit: (root) => ipcRenderer.invoke(IPC.folderListImplicit, root),
     watch: (root) => ipcRenderer.invoke(IPC.folderWatch, root),
     unwatch: () => ipcRenderer.invoke(IPC.folderUnwatch),
   },

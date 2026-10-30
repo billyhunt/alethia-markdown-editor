@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { IGNORED_DIR_NAMES, isMarkdownPath } from '../shared/markdown.ts'
-import { assertReadableDir } from './paths.ts'
+import { PathPermissionError, assertReadableDir, validatePath } from './paths.ts'
 import type { FileNode, FolderTree } from '../shared/api.ts'
 
 const MAX_DEPTH = 12
@@ -64,4 +65,36 @@ export async function listMarkdownTree(input: unknown): Promise<FolderTree> {
     tree: { name: path.basename(root), path: root, kind: 'dir', children },
     truncated,
   }
+}
+
+/**
+ * Whether a folder is somewhere nobody means to open by opening one file in
+ * it: the home folder, a filesystem root, or a mounted volume's top level.
+ * Compared on real paths, so `/Volumes/Macintosh HD` (which is `/`) and the
+ * `/var` aliases are caught.
+ */
+export async function isBroadRoot(real: string): Promise<boolean> {
+  const home = await fs.realpath(os.homedir()).catch(() => os.homedir())
+  return real === home || path.parse(real).root === real || path.dirname(real) === '/Volumes'
+}
+
+/**
+ * The sidebar tree for a folder the app chose to show on its own, because a
+ * file was opened from it. Resolves null, not an error, when the folder is not
+ * one to show: main never granted it (a file-only grant, a symlink's real
+ * parent, a linked file outside the open folders) or it is too broad to adopt
+ * silently. Every other failure still throws, so the caller can report it.
+ * Explicitly opened folders go through listMarkdownTree and are not limited.
+ */
+export async function listImplicitFolder(input: unknown): Promise<FolderTree | null> {
+  const target = validatePath(input)
+  let granted: string
+  try {
+    granted = await assertReadableDir(target)
+  } catch (error) {
+    if (error instanceof PathPermissionError) return null
+    throw error
+  }
+  if (await isBroadRoot(await fs.realpath(granted))) return null
+  return listMarkdownTree(granted)
 }

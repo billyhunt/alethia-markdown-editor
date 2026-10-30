@@ -228,6 +228,34 @@ it.each([IPC.folderList, IPC.folderWatch, IPC.docWatch])('refuses ungranted fold
   await expect(invoke(channel, channel === IPC.folderWatch ? root : secret)).rejects.toThrow(/EPERM/)
   expect(getSettings().windows).toEqual([])
 })
+it('resolves null, not EPERM, for an ungranted folder through folderListImplicit', async () => {
+  await expect(invoke(IPC.folderListImplicit, root)).resolves.toBeNull()
+  // The explicit channel still refuses the very same folder.
+  await expect(invoke(IPC.folderList, root)).rejects.toThrow(/EPERM/)
+  expect(getSettings().windows).toEqual([])
+})
+it('lists a granted ordinary folder through folderListImplicit', async () => {
+  const notes = path.join(root, 'notes')
+  await fs.mkdir(notes)
+  await fs.writeFile(path.join(notes, 'a.md'), '# a')
+  grantRoot(notes)
+  await expect(invoke(IPC.folderListImplicit, notes)).resolves.toMatchObject({ root: notes })
+})
+it('declines the home folder through folderListImplicit but lists it when opened explicitly', async () => {
+  const home = path.join(root, 'home')
+  await fs.mkdir(home)
+  await fs.writeFile(path.join(home, 'todo.md'), '# todo')
+  grantRoot(home)
+  const realHome = process.env.HOME
+  process.env.HOME = home
+  try {
+    await expect(invoke(IPC.folderListImplicit, home)).resolves.toBeNull()
+    await expect(invoke(IPC.folderList, home)).resolves.toMatchObject({ root: home })
+  } finally {
+    if (realHome === undefined) delete process.env.HOME
+    else process.env.HOME = realHome
+  }
+})
 it('still records a granted recent', async () => {
   grantFile(secret)
   await invoke(IPC.recentsAdd, secret)
