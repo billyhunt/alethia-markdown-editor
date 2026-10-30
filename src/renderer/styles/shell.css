@@ -397,3 +397,24 @@ body.is-fullscreen .main-pane {
   cursor: pointer;
   flex: 0 0 auto;
 }
+
+/* --- keyboard focus on bands -------------------------------------------- */
+
+/* The accent outline (index.css) falls below 3:1 on an ink band and nearly
+   vanishes on hot, so a band's controls take the band's own text colour. */
+.titlebar :focus-visible,
+.sidebar-tabs button.is-active:focus-visible {
+  outline-color: var(--bg);
+}
+
+.banner :focus-visible,
+.history-pin :focus-visible,
+.tree-row.is-current:focus-visible {
+  outline-color: #111111;
+}
+
+/* Sidebar rows and tabs run edge to edge inside a clipping, scrolling list,
+   which would cut the sides off an outline drawn outside them. */
+.sidebar :focus-visible {
+  outline-offset: -2px;
+}

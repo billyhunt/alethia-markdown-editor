@@ -114,6 +114,8 @@ body {
   width: 0.85em;
   height: 0.85em;
   margin: 0;
+  /* A form control's currentColor is the browser's, not the text's. */
+  color: inherit;
   border: 2px solid currentColor;
   border-radius: 0;
   background: transparent;

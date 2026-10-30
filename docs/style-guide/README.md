@@ -326,7 +326,10 @@ back in:
   the component's root, not just the variables (§14).
 - **Focus rings.** Left to the browser, macOS draws a rounded ring around a
   square control. Set your own: a 2px `--accent` outline, offset 2px, on
-  `:focus-visible`.
+  `:focus-visible`. On a band the accent is too faint, so a band's controls
+  take the band's text colour (paper on the ink titlebar, ink on hot). In the
+  sidebar the outline is drawn inside, because the list clips anything
+  outside its rows.
 - **Checkboxes.** The native box is rounded. Draw it: a 2px square rule in
   the text colour, filled solid `--accent` when checked.
 
@@ -509,7 +512,7 @@ is the only heading the chrome has; it labels, it does not shout.
 | Current / the one that matters | Hot fill + ink, weight 500 |
 | Needs a decision | Hot band (banner) |
 | Unsaved / pending | 7px hot square |
-| Keyboard focus | 2px `--accent` outline, offset 2px |
+| Keyboard focus | 2px `--accent` outline, offset 2px; on a band, the band's text colour; inside the sidebar, inset |
 
 ---
 
@@ -753,17 +756,21 @@ like, and mount tooltips and drag ghosts on `<body>`. Radius is the one
 property worth `!important` here:
 
 ```css
+.vendor-root,
 .vendor-root *,
 .vendor-root *::before,
 .vendor-root *::after,
-.vendor-tooltip {
+.vendor-tooltip,
+.vendor-drag-ghost {
   border-radius: 0 !important;
 }
 ```
 
 Keep the variables at 0 as well, because a library's own `!important` rules
-can read them and outrank yours. Slider and scrollbar thumbs are
-pseudo-elements, so list them in a rule of their own.
+can read them and outrank yours. Swap in the library's own portal classes for
+the tooltip and drag ghost. `*` does not reach slider and scrollbar thumbs, so
+list them in a rule of their own: a pseudo-element an engine doesn't know
+voids every selector in its rule.
 [Tabula](https://github.com/billyhunt/tabula) does all of this for Excalidraw
 in `src/renderer/styles/excalidraw.css`.
 

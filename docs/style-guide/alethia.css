@@ -197,6 +197,25 @@
   outline-offset: 2px;
 }
 
+/* On a band the accent falls below 3:1 (an ink band) or nearly vanishes (hot),
+   so a band's controls take the band's own text colour. */
+.al-page .al-titlebar :focus-visible,
+.al-page .al-tabs > :is(.is-active, [aria-selected='true'], [aria-current='page']):focus-visible {
+  outline-color: var(--bg);
+}
+
+.al-page .al-banner :focus-visible,
+.al-page .al-pin :focus-visible,
+.al-page .al-row:is(.is-current, [aria-current='true'], [aria-current='page']):focus-visible {
+  outline-color: var(--on-hot);
+}
+
+/* Rows and tabs run edge to edge inside a clipping, scrolling sidebar, which
+   would cut the sides off an outline drawn outside them. */
+.al-page .al-sidebar :focus-visible {
+  outline-offset: -2px;
+}
+
 /* Checkboxes are drawn, because the native box has rounded corners. Empty, a
    2px square rule in the text colour; checked, a solid accent square. Zero
    specificity, so a checkbox's own spacing wins. */
@@ -205,6 +224,8 @@
   width: 0.85em;
   height: 0.85em;
   margin: 0;
+  /* A form control's currentColor is the browser's, not the text's. */
+  color: inherit;
   border: var(--rule-thin) solid currentColor;
   border-radius: 0;
   background: transparent;
@@ -955,7 +976,8 @@
 
   /* Fills are load-bearing in this design, so they have to survive. */
   .al-page,
-  .al-page * {
+  .al-page *,
+  .al-prose input[type='checkbox'] {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
