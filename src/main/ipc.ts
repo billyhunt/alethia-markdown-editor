@@ -4,7 +4,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/ipc.ts'
 import { isReadablePath } from '../shared/markdown.ts'
 import { createNamedFile, readTextFile, renameFile, statPath, writeTextFile } from './files.ts'
-import { listMarkdownTree } from './folder.ts'
+import { listImplicitFolder, listMarkdownTree } from './folder.ts'
 import {
   confirmSaveChanges,
   confirmOpenLinkedFile,
@@ -115,6 +115,7 @@ export function registerIpcHandlers(): void {
 
   // --- folder --------------------------------------------------------------
   ipcMain.handle(IPC.folderList, (_event, root: unknown) => listMarkdownTree(root))
+  ipcMain.handle(IPC.folderListImplicit, (_event, root: unknown) => listImplicitFolder(root))
   ipcMain.handle(IPC.folderWatch, async (event, root: unknown) => {
     const win = winOf(event)
     const target = await assertReadableDir(root)

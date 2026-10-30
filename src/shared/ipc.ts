@@ -17,6 +17,7 @@ export const IPC = {
   fsRename: 'fs:rename',
   fsCreateFile: 'fs:createFile',
   folderList: 'folder:list',
+  folderListImplicit: 'folder:listImplicit',
   folderWatch: 'folder:watch',
   folderUnwatch: 'folder:unwatch',
   docWatch: 'doc:watch',

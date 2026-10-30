@@ -186,6 +186,12 @@ export interface MarkdownApi {
 
   folder: {
     list(root: string): Promise<FolderTree>
+    /**
+     * The tree for a folder shown because a file was opened from it. Null when
+     * that folder is not one to show (never granted, or too broad), which is
+     * not an error. Other failures reject.
+     */
+    listImplicit(root: string): Promise<FolderTree | null>
     /** Replaces any previous folder watch. Emits on.folderTree. */
     watch(root: string): Promise<void>
     unwatch(): Promise<void>

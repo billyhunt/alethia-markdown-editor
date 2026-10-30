@@ -15,8 +15,9 @@ export async function showOpenFile(win: BrowserWindow | null): Promise<string | 
   })
   const [chosen] = result.filePaths
   if (result.canceled || !chosen) return null
-  // A file opens as a one-folder workspace so its siblings and relative images
-  // are usable without giving the renderer authority to choose that folder.
+  // A file opens as a one-folder workspace, where main allows it (see
+  // listImplicitFolder), so its siblings and relative images are usable
+  // without giving the renderer authority to choose that folder.
   grantRoot(path.dirname(chosen))
   return grantFile(chosen)
 }
