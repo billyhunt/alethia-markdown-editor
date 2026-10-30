@@ -65,9 +65,18 @@ or browse [`docs/style-guide/`](docs/style-guide/) in the repository.
 
 ```bash
 npm test          # unit and regression suite
+npm run test:e2e  # end-to-end suite: builds, then drives real app windows
 npm run package   # unsigned Apple-silicon .app in release/mac-arm64/
 npm run dist      # unsigned Apple-silicon .dmg in release/
 ```
+
+The end-to-end suite opens app windows that take focus, so CI runs it on
+macOS for every pull request and every push to `main`; there is no need to run
+it on the Mac you are working at. A local run first waits for any other
+desktop test run on the machine (Tabula's included), and builds only once it
+holds the lock, so two never fight over focus or rebuild under each other. The
+lock is port 47390 on 127.0.0.1, which the system frees as soon as its holder
+exits. Pass Playwright options after `--`: `npm run test:e2e -- -g "<name>"`.
 
 `npm run package` is a local smoke-test build, not a distributable release.
 Before distributing outside the App Store, configure Developer ID signing,
