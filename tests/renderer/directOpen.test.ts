@@ -71,23 +71,36 @@ beforeEach(() => {
 })
 
 describe('document-first openPath', () => {
-  it('opens a direct file without adopting its parent folder and clears only the transient sidebar', async () => {
+  it('opens a direct file and shows its containing folder in the sidebar', async () => {
+    mocks.folderList.mockResolvedValue({ root: '/notes', tree: [], truncated: false })
+
     await openPath(PATH, { preferDocument: true })
 
     expect(mocks.readFile).toHaveBeenCalledWith(PATH)
-    expect(mocks.folderList).not.toHaveBeenCalled()
     expect(mocks.setDocument).toHaveBeenCalledWith('# Today')
     expect(mocks.setFilePath).toHaveBeenCalledWith(PATH)
     expect(mocks.documentWatch).toHaveBeenCalledWith(PATH)
     expect(useDocumentStore.getState().filePath).toBe(PATH)
-    expect(useWorkspaceStore.getState().folderRoot).toBeNull()
-    expect(useWorkspaceStore.getState().sidebarVisible).toBe(false)
+    expect(mocks.folderList).toHaveBeenCalledWith('/notes')
+    expect(useWorkspaceStore.getState().folderRoot).toBe('/notes')
+    // The user's own sidebar preference is left alone.
+    expect(useWorkspaceStore.getState().sidebarVisible).toBe(true)
   })
 
-  it('keeps the sidebar state when opening from an existing UI context', async () => {
+  it('keeps an open workspace when a direct file is opened beside it', async () => {
+    useWorkspaceStore.setState({ folderRoot: '/vault' })
+
+    await openPath(PATH, { preferDocument: true })
+
+    expect(mocks.folderList).not.toHaveBeenCalled()
+    expect(useWorkspaceStore.getState().folderRoot).toBe('/vault')
+  })
+
+  it('does not change the folder for an open from inside the UI', async () => {
     await openPath(PATH)
 
     expect(mocks.folderList).not.toHaveBeenCalled()
+    expect(useWorkspaceStore.getState().folderRoot).toBeNull()
     expect(useWorkspaceStore.getState().sidebarVisible).toBe(true)
   })
 

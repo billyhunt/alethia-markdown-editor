@@ -92,6 +92,16 @@ test.describe('opening from the command line', () => {
     await quit(app)
   })
 
+  test('a file named on launch shows its containing folder in the sidebar', async () => {
+    const note = box.file('note.md')
+    box.file('sibling.md')
+    const app = await launch(box, [note])
+    const page = await app.firstWindow()
+    await expect(page.locator('.tree-file', { hasText: 'sibling.md' })).toBeVisible()
+    await expect(page.locator('.tree-file', { hasText: 'note.md' })).toBeVisible()
+    await quit(app)
+  })
+
   test('a non-markdown file is ignored rather than opened', async () => {
     const binary = path.join(box.docs, 'image.png')
     fs.writeFileSync(binary, Buffer.from([0x89, 0x50, 0x4e, 0x47]))
@@ -109,6 +119,17 @@ test.describe('opening from Finder while running', () => {
     await openFromFinder(app, note)
     await expectDocuments(app, [note])
     expect(await focusedFile(app)).toBe(note)
+    await quit(app)
+  })
+
+  test('a file opened from Finder shows its containing folder in the sidebar', async () => {
+    const note = box.file('note.md')
+    box.file('sibling.md')
+    const app = await launch(box)
+    await app.firstWindow()
+    await openFromFinder(app, note)
+    const page = await pageFor(app, note)
+    await expect(page.locator('.tree-file', { hasText: 'sibling.md' })).toBeVisible()
     await quit(app)
   })
 

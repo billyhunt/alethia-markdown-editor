@@ -61,7 +61,11 @@ export async function newDocument(): Promise<void> {
 }
 
 interface OpenPathOptions {
-  /** A file chosen directly should take the whole window unless a workspace is already open. */
+  /**
+   * A file chosen directly (Finder, Open...) shows its containing folder in the
+   * sidebar, unless a workspace is already open: that one stays, because the
+   * folder is the user's context and a document is not owned by it.
+   */
   preferDocument?: boolean
   /**
    * Main already chose this window for the file (Finder, argv, a second
@@ -89,9 +93,7 @@ export async function openPath(
     try {
       await adoptFile(filePath)
       if (preferDocument && !useWorkspaceStore.getState().folderRoot) {
-        // This is transient; a direct-open must not overwrite the user's global
-        // sidebar preference, and the toggle remains one click away.
-        useWorkspaceStore.getState().setSidebarVisible(false)
+        await adoptFolder(filePath.slice(0, filePath.lastIndexOf('/')) || '/')
       }
     } catch (error) {
       await api.dialog.showError({ title: 'Could not open file', message: unwrapIpcError(error) })
