@@ -120,3 +120,41 @@ jobs:
       # inspect the output rather than trusting the exit code.
       - name: Verify the app bundle
         run: npm run verify:package
+
+  e2e:
+    name: End-to-end on macOS
+    # The end-to-end suite drives real app windows, which take focus on
+    # whatever desktop runs them. Running it here means nobody has to run it
+    # on the Mac they are working at.
+    needs: checks
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # No Electron cache, for the reason given in the package job.
+      - run: npm ci
+
+      # Newer npm releases skip dependencies' install scripts unless approved,
+      # and Electron's is what downloads the binary the suite launches. A no-op
+      # once it is there.
+      - name: Electron binary
+        run: node node_modules/electron/install.js
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Keep end-to-end results
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7

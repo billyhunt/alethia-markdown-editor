@@ -65,9 +65,16 @@ or browse [`docs/style-guide/`](docs/style-guide/) in the repository.
 
 ```bash
 npm test          # unit and regression suite
+npm run test:e2e  # end-to-end suite: builds, then drives real app windows
 npm run package   # unsigned Apple-silicon .app in release/mac-arm64/
 npm run dist      # unsigned Apple-silicon .dmg in release/
 ```
+
+The end-to-end suite opens app windows that take focus, so CI runs it on
+macOS for every push and pull request; there is no need to run it on the Mac
+you are working at. If you do run it locally, it waits for any other desktop
+suite on the machine (Tabula's included) to finish first, so two never fight
+over focus.
 
 `npm run package` is a local smoke-test build, not a distributable release.
 Before distributing outside the App Store, configure Developer ID signing,
