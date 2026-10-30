@@ -11,7 +11,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: 'e2e',
   testMatch: '**/*.spec.ts',
-  globalSetup: './e2e/desktopLock.ts',
+  globalSetup: './e2e/desktopLock.mjs',
   workers: 1,
   timeout: 45_000,
   expect: { timeout: 10_000 },
