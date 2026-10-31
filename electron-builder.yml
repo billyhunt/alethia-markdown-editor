@@ -14,12 +14,36 @@ files:
   - THIRD_PARTY_NOTICES.md
   - licenses/**
 asar: true
+# Electron fuses are flipped in the packaged binary before it is signed. They
+# close the ways a local process could run its own code under the app's
+# signed identity: ELECTRON_RUN_AS_NODE, NODE_OPTIONS and --inspect, or a
+# loose app/ directory in place of the validated app.asar. Playwright attaches
+# through --inspect, so a packaged end-to-end run needs a build with
+# enableNodeCliInspectArguments on (see the README).
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  # Flipping fuses invalidates Electron's ad-hoc signature, and an arm64 binary
+  # with a stale signature is killed at launch. Re-sign ad hoc when no real
+  # identity signs the bundle afterwards.
+  resetAdHocDarwinSignature: true
+  # grantFileProtocolExtraPrivileges stays on (the default): the renderer is
+  # loaded with loadFile, which needs them.
 mac:
   category: public.app-category.productivity
   target: [dir]
-  # Unsigned local builds. Remove this (and add hardenedRuntime, entitlements
-  # and notarize) when a Developer ID certificate is available.
-  identity: null
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # Hardened runtime and entitlements are what notarization requires. They do
+  # nothing to an unsigned build. Whether a build is signed and notarized is
+  # decided by the npm script that runs electron-builder (see package.json),
+  # not here, so a missing certificate can never fail a local build.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   darkModeSupport: true
 fileAssociations:
   - ext: [md, markdown, mdown, mkd]
