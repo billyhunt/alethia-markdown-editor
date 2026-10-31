@@ -67,7 +67,8 @@ or browse [`docs/style-guide/`](docs/style-guide/) in the repository.
 npm test          # unit and regression suite
 npm run test:e2e  # end-to-end suite: builds, then drives real app windows
 npm run package   # unsigned Apple-silicon .app in release/mac-arm64/
-npm run dist      # unsigned Apple-silicon .dmg in release/
+npm run dist      # unsigned Apple-silicon .dmg and .zip in release/
+npm run dist:signed  # the same, signed with Developer ID and notarized (needs the secrets below)
 ```
 
 The end-to-end suite opens app windows that take focus, so CI runs it on
@@ -78,12 +79,40 @@ holds the lock, so two never fight over focus or rebuild under each other. The
 lock is port 47390 on 127.0.0.1, which the system frees as soon as its holder
 exits. Pass Playwright options after `--`: `npm run test:e2e -- -g "<name>"`.
 
-`npm run package` is a local smoke-test build, not a distributable release.
-Before distributing outside the App Store, configure Developer ID signing,
-hardened runtime, entitlements, and notarization. A Mac App Store build needs a
-separate provisioning profile, App Sandbox entitlements, a release version, and
-a monotonically increasing Mac build number; those credentials and release
-choices are intentionally not stored in this repository.
+`npm run package` is a local smoke-test build, not a distributable release. The
+release workflow builds the DMG and zip; Developer ID signing and notarization
+are in place but need the secrets below. A Mac App Store build needs a separate
+provisioning profile, App Sandbox entitlements, a release version, and a
+monotonically increasing Mac build number, and is not covered here.
+
+### Releasing
+
+Set `version` in `package.json`, merge, then push a matching tag:
+
+```bash
+git tag v0.1.0-beta.1 && git push origin v0.1.0-beta.1
+```
+
+The [release workflow](.github/workflows/release.yml) refuses a tag that does
+not match `package.json`, runs the tests, builds the DMG and zip, writes
+`SHA256SUMS.txt`, and publishes a GitHub release. Versions below 1.0 or with a
+suffix are marked pre-release.
+
+It signs and notarizes only when all five repository secrets are set; otherwise
+it publishes an unsigned build and says so in the release notes. Unsigned
+builds open only after Privacy & Security ▸ Open Anyway.
+
+| Secret | Value |
+|---|---|
+| `MACOS_CERTIFICATE_P12_BASE64` | Developer ID Application certificate and key, exported as `.p12`, then `base64 -i cert.p12` |
+| `MACOS_CERTIFICATE_PASSWORD` | the password set on that export |
+| `APPLE_ID` | the Apple Account email |
+| `APPLE_APP_SPECIFIC_PASSWORD` | an app-specific password from account.apple.com |
+| `APPLE_TEAM_ID` | the Team ID under Membership at developer.apple.com |
+
+The signing path (`dist:signed`, the hardened runtime and
+`build/entitlements.mac.plist`) has not yet been run against a real
+certificate.
 
 ## Opening markdown files with Alethia
 

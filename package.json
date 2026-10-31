@@ -20,9 +20,10 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "node e2e/desktopLock.mjs \"npm run build && playwright test\"",
-    "package": "npm run build && electron-builder --mac --dir",
+    "package": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir --publish never",
     "verify:package": "node scripts/verify-package.mjs",
-    "dist": "npm run build && electron-builder --mac dmg"
+    "dist": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip --arm64 --publish never",
+    "dist:signed": "npm run build && electron-builder --mac dmg zip --arm64 --publish never -c.mac.notarize=true"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -55,7 +56,7 @@
     "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^6.1.0",
     "@vitest/coverage-v8": "^5.0.0",
-    "electron": "^44.2.0",
+    "electron": "44.10.1",
     "electron-builder": "^26.15.3",
     "jsdom": "^30.0.1",
     "oxlint": "^1.79.0",
