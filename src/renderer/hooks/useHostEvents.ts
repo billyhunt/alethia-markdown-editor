@@ -77,7 +77,10 @@ export function useHostEvents(): void {
         const stat = await api.fs.stat(session.file).catch(() => null)
         // Main restored this window for this file; another window showing it
         // is not a reason to give it up.
-        if (stat) await openPath(session.file, { routed: true })
+        // A window saved without a folder (opened before a direct open showed
+        // its folder) gets the file's folder now, the way a fresh open would;
+        // a saved folder, adopted above, is left alone.
+        if (stat) await openPath(session.file, { routed: true, preferDocument: true })
         if (useDocumentStore.getState().filePath === session.file) return
         // Main still believes this window shows the file it could not open;
         // without this it would route that path here and never count it as

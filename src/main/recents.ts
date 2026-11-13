@@ -1,3 +1,4 @@
+import path from 'node:path'
 import fs from 'node:fs/promises'
 import { app, BrowserWindow } from 'electron'
 import { getSettings, patchSettings } from './settings.ts'
@@ -173,6 +174,10 @@ export function grantPersistedRecents(): void {
     if (session.file) {
       try {
         grantFile(session.file)
+        // A window saved without a folder shows its file's folder on restore,
+        // the way a direct open does (see openWith's classify), so it gets the
+        // same grant: the containing folder, not just the file.
+        if (!session.folder) grantRoot(path.dirname(session.file))
       } catch {
         /* ignore */
       }

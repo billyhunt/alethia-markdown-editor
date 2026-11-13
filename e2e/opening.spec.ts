@@ -335,6 +335,18 @@ test.describe('session restore', () => {
     await quit(app)
   })
 
+  test('a restored document saved without a folder shows its folder in the sidebar', async () => {
+    // Windows saved before a direct open showed its folder carry no folder.
+    const note = box.file('note.md')
+    box.file('sibling.md')
+    box.settings({ windows: [{ bounds: { width: 900, height: 600 }, folder: null, file: note }] })
+    const app = await launch(box)
+    await expectDocuments(app, [note])
+    const page = await pageFor(app, note)
+    await expect(page.locator('.tree-file', { hasText: 'sibling.md' })).toBeVisible()
+    await quit(app)
+  })
+
   test('a document saved in two windows is restored into one', async () => {
     const twice = box.file('twice.md')
     box.settings({
